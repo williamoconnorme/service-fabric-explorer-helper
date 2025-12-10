@@ -35,3 +35,7 @@ When a replica table is detected (headers contain both "Replica" and "Id"), a **
 - No build step is needed. Zip the files (`manifest.json`, `content-script.js`, optional `README.md`/icons) and share the archive.
 - Firefox users can load the unpacked folder via `about:debugging`, Chromium users via `chrome://extensions` → **Load unpacked**.
 - If you want a signed/packed extension, follow your org’s signing process or the Chrome Web Store/AMO flow; this repo is already MV3-compatible for Chromium.
+
+## Privacy Policy
+
+See `PRIVACY-POLICY.md`. In short: the extension never collects, stores, or transmits any user data.
