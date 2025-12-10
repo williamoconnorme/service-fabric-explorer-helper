@@ -1,0 +1,45 @@
+name: Build and Release Browser Extensions
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package Extensions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read manifest metadata
+        id: manifest
+        run: echo "version=$(jq -r '.version' manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Package extensions
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          mkdir -p dist
+          zip -r "dist/service-fabric-explorer-helper-${VERSION}-chrome.zip" manifest.json content-script.js README.md
+          zip -r "dist/service-fabric-explorer-helper-${VERSION}-firefox.zip" manifest.json content-script.js README.md
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-extension-packages
+          path: dist/*.zip
+
+      - name: Attach assets to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/service-fabric-explorer-helper-${{ steps.manifest.outputs.version }}-chrome.zip
+            dist/service-fabric-explorer-helper-${{ steps.manifest.outputs.version }}-firefox.zip
