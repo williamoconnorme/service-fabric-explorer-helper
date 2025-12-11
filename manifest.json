@@ -9,7 +9,9 @@
         "*://*/Explorer*",
         "*://*/explorer*"
       ],
-      "js": ["content-script.js"],
+      "js": [
+        "content-script.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -17,5 +19,11 @@
     "*://*/Explorer*",
     "*://*/explorer*"
   ],
-  "permissions": []
+  "permissions": [],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@sfx-helper"
+    }
+  },
+  "data_collection_permissions": []
 }
