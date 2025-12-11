@@ -160,15 +160,27 @@
     toast.setAttribute("role", "alert");
     toast.style.margin = "0.25rem";
     toast.style.minWidth = "260px";
-    toast.innerHTML = `
-      <div class="toast-header">
-        <strong class="me-auto">${title || type}</strong>
-        <button type="button" class="btn-close" aria-label="Close"></button>
-      </div>
-      <div class="toast-body">${message}</div>
-    `;
-    const closer = toast.querySelector(".btn-close");
-    closer.addEventListener("click", () => toast.remove());
+
+    const header = document.createElement("div");
+    header.className = "toast-header";
+    const strong = document.createElement("strong");
+    strong.className = "me-auto";
+    strong.textContent = title || type;
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "btn-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.addEventListener("click", () => toast.remove());
+    header.appendChild(strong);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "toast-body";
+    body.textContent = message;
+
+    toast.appendChild(header);
+    toast.appendChild(body);
+
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 6000);
   }
