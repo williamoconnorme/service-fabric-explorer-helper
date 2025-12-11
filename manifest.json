@@ -21,11 +21,11 @@
   ],
   "permissions": [],
   "browser_specific_settings": {
-    "data_collection_permissions": {
-      "required": [],
-      "optional": []
-    },
     "gecko": {
+      "data_collection_permissions": {
+        "required": [],
+        "optional": []
+      },
       "id": "@sfx-helper"
     }
   }
