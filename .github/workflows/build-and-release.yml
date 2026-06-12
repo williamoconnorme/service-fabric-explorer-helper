@@ -18,13 +18,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Read manifest metadata
-        id: manifest
-        run: echo "version=$(jq -r '.version' manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Resolve build version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(jq -r '.version' manifest.json)"
+          fi
+
+          if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
+            echo "Unable to determine extension version."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set manifest version from tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          jq --arg version "$VERSION" '.version = $version' manifest.json > manifest.tmp.json
+          mv manifest.tmp.json manifest.json
 
       - name: Package extensions
         env:
-          VERSION: ${{ steps.manifest.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
           FILES="manifest.json content-script.js sfx-core.js sfx-modal.js sfx-api.js sfx-ui.js README.md PRIVACY-POLICY.md"
@@ -44,5 +62,5 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/service-fabric-explorer-helper-${{ steps.manifest.outputs.version }}-chrome.zip
-            dist/service-fabric-explorer-helper-v${{ steps.manifest.outputs.version }}.xpi
+            dist/service-fabric-explorer-helper-${{ steps.version.outputs.version }}-chrome.zip
+            dist/service-fabric-explorer-helper-v${{ steps.version.outputs.version }}.xpi
