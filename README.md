@@ -43,9 +43,16 @@ When a replica table is detected (headers contain both "Replica" and "Id"), a **
 
 ## Packaging for teammates
 
-- No build step is needed. Zip the files (`manifest.json`, `content-script.js`, optional `README.md`/icons) and share the archive.
+- No build step is needed, but your archive must include all files referenced by `manifest.json`.
+- Required files: `manifest.json`, `content-script.js`, `sfx-core.js`, `sfx-modal.js`, `sfx-api.js`, `sfx-ui.js`.
+- Optional files: `README.md`, `PRIVACY-POLICY.md`, icons.
 - Firefox users can load the unpacked folder via `about:debugging`, Chromium users via `chrome://extensions` → **Load unpacked**.
 - If you want a signed/packed extension, follow your org’s signing process or the Chrome Web Store/AMO flow; this repo is already MV3-compatible for Chromium.
+
+### Firefox upload package (recommended)
+
+- Use the GitHub Actions build artifacts/releases produced by `.github/workflows/build-and-release.yml`.
+- The workflow generates `service-fabric-explorer-helper-v<version>.xpi` with the required root layout and scripts.
 
 ## Privacy Policy
 
