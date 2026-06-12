@@ -160,6 +160,186 @@
     helper.setStatus(`Scale requested for service ${normalizedServiceId}.`, "success");
   }
 
+  const STATELESS_UPDATE_FLAGS = {
+    InstanceCount: 0x0001,
+    PlacementConstraints: 0x0002,
+    ServicePlacementPolicies: 0x0004,
+    CorrelationScheme: 0x0008,
+    LoadMetrics: 0x0010,
+    DefaultMoveCost: 0x0020,
+    ScalingPolicies: 0x0040,
+    MinInstanceCount: 0x0080,
+    MinInstancePercentage: 0x0100,
+    InstanceCloseDelayDurationSeconds: 0x0200,
+    InstanceRestartWaitDurationSeconds: 0x0400,
+    ServiceDnsName: 0x0800,
+    TagsForPlacement: 0x2000,
+    TagsForRunning: 0x4000
+  };
+
+  const STATEFUL_UPDATE_FLAGS = {
+    TargetReplicaSetSize: 0x0001,
+    ReplicaRestartWaitDurationSeconds: 0x0002,
+    QuorumLossWaitDurationSeconds: 0x0004,
+    StandByReplicaKeepDurationSeconds: 0x0008,
+    MinReplicaSetSize: 0x0010,
+    PlacementConstraints: 0x0020,
+    ServicePlacementPolicies: 0x0040,
+    CorrelationScheme: 0x0080,
+    LoadMetrics: 0x0100,
+    DefaultMoveCost: 0x0200,
+    ScalingPolicies: 0x0400,
+    ServicePlacementTimeLimitSeconds: 0x0800,
+    DropSourceReplicaOnMove: 0x1000,
+    ServiceDnsName: 0x2000,
+    TagsForPlacement: 0x10000,
+    TagsForRunning: 0x20000,
+    AuxiliaryReplicaCount: 0x40000
+  };
+
+  function getServiceUpdateFieldOrder(serviceKind) {
+    const common = [
+      "PlacementConstraints",
+      "ServicePlacementPolicies",
+      "CorrelationScheme",
+      "LoadMetrics",
+      "DefaultMoveCost",
+      "ScalingPolicies",
+      "ServiceDnsName",
+      "TagsForPlacement",
+      "TagsForRunning"
+    ];
+    if (serviceKind === "Stateful") {
+      return [
+        "TargetReplicaSetSize",
+        "MinReplicaSetSize",
+        "ReplicaRestartWaitDurationSeconds",
+        "QuorumLossWaitDurationSeconds",
+        "StandByReplicaKeepDurationSeconds",
+        "ServicePlacementTimeLimitSeconds",
+        "DropSourceReplicaOnMove",
+        "AuxiliaryReplicaCount",
+        ...common
+      ];
+    }
+    return [
+      "InstanceCount",
+      "MinInstanceCount",
+      "MinInstancePercentage",
+      "InstanceCloseDelayDurationSeconds",
+      "InstanceRestartWaitDurationSeconds",
+      ...common
+    ];
+  }
+
+  function buildServiceUpdateModel(serviceDescription) {
+    const serviceKind = String(
+      serviceDescription.ServiceKind || serviceDescription.serviceKind || serviceDescription.Kind || ""
+    ).trim();
+    if (serviceKind !== "Stateful" && serviceKind !== "Stateless") {
+      throw new Error(`Unsupported service kind for update: ${serviceKind || "unknown"}`);
+    }
+
+    const model = { ServiceKind: serviceKind };
+    getServiceUpdateFieldOrder(serviceKind).forEach((key) => {
+      if (serviceDescription[key] !== undefined) {
+        model[key] = serviceDescription[key];
+      }
+    });
+    return model;
+  }
+
+  function stringifyServiceUpdateModel(serviceDescription) {
+    return JSON.stringify(buildServiceUpdateModel(serviceDescription), null, 2);
+  }
+
+  function summarizeSupportedUpdateFields(serviceKind) {
+    return getServiceUpdateFieldOrder(serviceKind).join(", ");
+  }
+
+  function computeServiceUpdateFlags(serviceKind, updateBody) {
+    const map = serviceKind === "Stateful" ? STATEFUL_UPDATE_FLAGS : STATELESS_UPDATE_FLAGS;
+    let flags = 0;
+    Object.entries(map).forEach(([key, flag]) => {
+      if (Object.prototype.hasOwnProperty.call(updateBody, key)) {
+        flags |= flag;
+      }
+    });
+    return flags;
+  }
+
+  async function promptUpdateServiceInput(serviceId, serviceDescription) {
+    const serviceKind = String(
+      serviceDescription.ServiceKind || serviceDescription.serviceKind || serviceDescription.Kind || ""
+    ).trim();
+    const values = await helper.openActionModal({
+      title: `Update ${serviceKind} Service`,
+      submitLabel: "Update Service",
+      cancelLabel: "Cancel",
+      message: `ServiceId: ${serviceId}\nSupported properties: ${summarizeSupportedUpdateFields(serviceKind)}`,
+      fields: [
+        {
+          name: "updateJson",
+          label: "UpdateService body",
+          type: "textarea",
+          value: stringifyServiceUpdateModel(serviceDescription),
+          rows: 18,
+          required: true
+        },
+        {
+          name: "timeout",
+          label: "timeout (seconds, optional)",
+          type: "number",
+          value: "",
+          required: false
+        }
+      ]
+    });
+    if (!values) return null;
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(String(values.updateJson || "").trim());
+    } catch (err) {
+      throw new Error(`UpdateService JSON is invalid: ${err.message}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("UpdateService body must be a JSON object.");
+    }
+
+    const normalizedKind = String(parsed.ServiceKind || serviceKind).trim();
+    if (normalizedKind !== serviceKind) {
+      throw new Error(`ServiceKind must remain ${serviceKind}.`);
+    }
+    parsed.ServiceKind = serviceKind;
+
+    const flags = computeServiceUpdateFlags(serviceKind, parsed);
+    if (!flags) {
+      throw new Error("UpdateService body must contain at least one updatable property.");
+    }
+    parsed.Flags = String(flags);
+
+    return {
+      serviceKind,
+      timeout: helper.parseOptionalInt(values.timeout),
+      body: parsed
+    };
+  }
+
+  async function updateService(serviceId, update, options = {}) {
+    const normalizedServiceId = helper.normalizeServiceId(serviceId);
+    if (!normalizedServiceId) {
+      throw new Error("Missing service id for update.");
+    }
+    helper.setStatus(`Updating service ${normalizedServiceId}...`);
+    await postSfAction(`/Services/${encodeURIComponent(normalizedServiceId)}/$/Update`, {
+      apiVersion: options.apiVersion || "6.0",
+      query: { timeout: options.timeout },
+      body: update.body
+    });
+    helper.setStatus(`UpdateService requested for ${normalizedServiceId}.`, "success");
+  }
+
   async function promptScaleServiceInput(serviceId, serviceDescription) {
     const serviceKind = String(
       serviceDescription.ServiceKind || serviceDescription.serviceKind || serviceDescription.Kind || ""
@@ -718,6 +898,10 @@
     postSfAction,
     getSfJson,
     getServiceDescription,
+    buildServiceUpdateModel,
+    stringifyServiceUpdateModel,
+    promptUpdateServiceInput,
+    updateService,
     updateServiceScale,
     promptScaleServiceInput,
     promptMovePrimaryReplicaInput,

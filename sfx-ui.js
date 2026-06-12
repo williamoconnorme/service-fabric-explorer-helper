@@ -495,27 +495,27 @@
       const serviceContext = helper.collectRouteServiceContext(menu);
       if (menuEntityType === "service" && serviceContext.serviceId && !menu.dataset.sfxServiceMenuAugmented) {
         menu.dataset.sfxServiceMenuAugmented = "1";
-        const scaleServiceBtn = document.createElement("button");
-        scaleServiceBtn.textContent = "Scale Service";
-        scaleServiceBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
-        scaleServiceBtn.addEventListener("click", async (ev) => {
+        const updateServiceBtn = document.createElement("button");
+        updateServiceBtn.textContent = "Update Service";
+        updateServiceBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        updateServiceBtn.addEventListener("click", async (ev) => {
           ev.stopPropagation();
           const context = helper.collectRouteServiceContext(menu);
           const serviceId = helper.normalizeServiceId(context.serviceId || "");
           if (!serviceId) {
-            helper.setStatus("Could not determine service id for scaling.", "error");
+            helper.setStatus("Could not determine service id for update.", "error");
             return;
           }
           try {
             const description = await helper.getServiceDescription(serviceId, { apiVersion: "6.0" });
-            const update = await helper.promptScaleServiceInput(serviceId, description);
+            const update = await helper.promptUpdateServiceInput(serviceId, description);
             if (!update) return;
-            await helper.updateServiceScale(serviceId, update, { apiVersion: "6.0", timeout: update.timeout });
+            await helper.updateService(serviceId, update, { apiVersion: "6.0", timeout: update.timeout });
           } catch (err) {
             helper.setStatus(err.message, "error");
           }
         });
-        menu.appendChild(scaleServiceBtn);
+        menu.appendChild(updateServiceBtn);
 
         const recoverServicePartitionsBtn = document.createElement("button");
         recoverServicePartitionsBtn.textContent = "Recover Service Partitions";

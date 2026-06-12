@@ -18,7 +18,7 @@ Firefox extension that injects a small helper into Service Fabric Explorer pages
 2. On replica tables, a **Delete / Force Delete** column is added. Buttons use the partition from the current route, the replica id from the row, and the node from the row (or page).
 3. On replica details pages, the Replica Actions dropdown gains **Delete Replica** and **Force Delete Replica** entries.
 4. On application upgrade contexts, the Actions dropdown gains **Rollback Application** (uses `POST /Applications/{appId}/$/RollbackUpgrade?api-version=6.0`).
-5. On service contexts, the Actions dropdown gains **Scale Service**. It fetches the current service description, then opens a modal with either `InstanceCount` for stateless services or `TargetReplicaSetSize` + `MinReplicaSetSize` for stateful services and submits directly to `POST /Services/{serviceId}/$/Update?api-version=6.0`.
+5. On service contexts, the Actions dropdown gains **Update Service**. It fetches the current service description, opens a stateful/stateless-specific JSON model prepopulated with current values, computes the required `Flags`, and submits to `POST /Services/{serviceId}/$/Update?api-version=6.0`.
 6. On node contexts, the Actions dropdown gains **Create Repair Task** (uses `POST /$/CreateRepairTask?api-version=6.0`).
 7. Confirmation dialogs show replica/partition/node/service (or application/repair-task details) before executing.
 8. Repair task creation opens an SFX-styled modal with input fields for `TaskId`, `Action`, and target nodes, then posts a Node-targeted payload with state `Created`.
