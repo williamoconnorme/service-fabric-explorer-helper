@@ -10,6 +10,10 @@
         "*://*/explorer*"
       ],
       "js": [
+        "sfx-core.js",
+        "sfx-modal.js",
+        "sfx-api.js",
+        "sfx-ui.js",
         "content-script.js"
       ],
       "run_at": "document_idle"
