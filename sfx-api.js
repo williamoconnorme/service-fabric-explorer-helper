@@ -607,6 +607,264 @@
     };
   }
 
+  async function promptMoveInstanceInput(serviceId, partitionId) {
+    const values = await helper.openActionModal({
+      title: "Move Instance",
+      submitLabel: "Move Instance",
+      cancelLabel: "Cancel",
+      message: `ServiceId: ${serviceId}\nPartitionId: ${partitionId}`,
+      fields: [
+        { name: "currentNodeName", label: "Current Node Name (optional)", value: "", required: false },
+        { name: "newNodeName", label: "New Node Name (optional)", value: "", required: false },
+        { name: "ignoreConstraints", label: "Ignore Constraints", type: "checkbox", value: false, required: false },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    return {
+      action: "MoveInstance",
+      serviceId,
+      partitionId,
+      currentNodeName: String(values.currentNodeName || "").trim(),
+      newNodeName: String(values.newNodeName || "").trim(),
+      force: !!values.ignoreConstraints,
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptStartPartitionRestartInput(serviceId, partitionId, serviceKind) {
+    const isStateless = String(serviceKind || "").trim() === "Stateless";
+    const values = await helper.openActionModal({
+      title: "Start Partition Restart",
+      submitLabel: "Start Partition Restart",
+      cancelLabel: "Cancel",
+      message: `ServiceId: ${serviceId}\nPartitionId: ${partitionId}`,
+      fields: [
+        {
+          name: "operationId",
+          label: "Operation ID",
+          value: helper.generateOperationId(),
+          required: true
+        },
+        {
+          name: "restartPartitionMode",
+          label: "Restart Partition Mode",
+          type: "select",
+          value: isStateless ? "AllReplicasOrInstances" : "OnlyActiveSecondaries",
+          required: true,
+          options: [
+            { value: "AllReplicasOrInstances", label: "AllReplicasOrInstances" },
+            ...(isStateless ? [] : [{ value: "OnlyActiveSecondaries", label: "OnlyActiveSecondaries" }])
+          ]
+        },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+
+    const operationId = String(values.operationId || "").trim();
+    const restartPartitionMode = String(values.restartPartitionMode || "").trim();
+    if (!operationId) {
+      throw new Error("OperationId is required for StartPartitionRestart.");
+    }
+    if (!restartPartitionMode) {
+      throw new Error("RestartPartitionMode is required for StartPartitionRestart.");
+    }
+    if (isStateless && restartPartitionMode !== "AllReplicasOrInstances") {
+      throw new Error("Stateless partition restart requires RestartPartitionMode=AllReplicasOrInstances.");
+    }
+    return {
+      action: "StartPartitionRestart",
+      serviceId,
+      partitionId,
+      operationId,
+      restartPartitionMode,
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptPartitionRestartProgressInput(serviceId, partitionId) {
+    const values = await helper.openActionModal({
+      title: "Get Partition Restart Progress",
+      submitLabel: "Get Restart Progress",
+      cancelLabel: "Cancel",
+      message: `ServiceId: ${serviceId}\nPartitionId: ${partitionId}`,
+      fields: [
+        { name: "operationId", label: "Operation ID", value: "", required: true },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    const operationId = String(values.operationId || "").trim();
+    if (!operationId) {
+      throw new Error("OperationId is required to fetch partition restart progress.");
+    }
+    return {
+      operationId,
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  function buildBackupStorageDescription(values) {
+    const storageKind = String(values.storageKind || "").trim();
+    if (!storageKind) return undefined;
+
+    if (storageKind === "AzureBlobStore") {
+      const connectionString = String(values.connectionString || "").trim();
+      const containerName = String(values.containerName || "").trim();
+      if (!connectionString || !containerName) {
+        throw new Error("AzureBlobStore requires ConnectionString and ContainerName.");
+      }
+      return {
+        StorageKind: storageKind,
+        ConnectionString: connectionString,
+        ContainerName: containerName
+      };
+    }
+
+    if (storageKind === "FileShare") {
+      const path = String(values.path || "").trim();
+      if (!path) {
+        throw new Error("FileShare requires Path.");
+      }
+      const primaryUserName = String(values.primaryUserName || "").trim();
+      const primaryPassword = String(values.primaryPassword || "").trim();
+      const secondaryUserName = String(values.secondaryUserName || "").trim();
+      const secondaryPassword = String(values.secondaryPassword || "").trim();
+      const storage = {
+        StorageKind: storageKind,
+        Path: path
+      };
+      if (primaryUserName) storage.PrimaryUserName = primaryUserName;
+      if (primaryPassword) storage.PrimaryPassword = primaryPassword;
+      if (secondaryUserName) storage.SecondaryUserName = secondaryUserName;
+      if (secondaryPassword) storage.SecondaryPassword = secondaryPassword;
+      return storage;
+    }
+
+    throw new Error(`Unsupported StorageKind: ${storageKind}`);
+  }
+
+  async function promptPartitionBackupInput(partitionId) {
+    const values = await helper.openActionModal({
+      title: "Backup Partition",
+      submitLabel: "Backup Partition",
+      cancelLabel: "Cancel",
+      message: `PartitionId: ${partitionId}\nLeave storage fields blank to use the partition's existing backup policy storage.`,
+      fields: [
+        {
+          name: "storageKind",
+          label: "Storage Kind",
+          type: "select",
+          value: "",
+          required: false,
+          options: [
+            { value: "", label: "(use current backup policy)" },
+            { value: "AzureBlobStore", label: "AzureBlobStore" },
+            { value: "FileShare", label: "FileShare" }
+          ]
+        },
+        { name: "connectionString", label: "Azure Connection String", value: "", required: false },
+        { name: "containerName", label: "Azure Container Name", value: "", required: false },
+        { name: "path", label: "FileShare Path", value: "", required: false },
+        { name: "primaryUserName", label: "FileShare Primary User Name", value: "", required: false },
+        { name: "primaryPassword", label: "FileShare Primary Password", type: "password", value: "", required: false },
+        { name: "secondaryUserName", label: "FileShare Secondary User Name", value: "", required: false },
+        { name: "secondaryPassword", label: "FileShare Secondary Password", type: "password", value: "", required: false },
+        { name: "backupTimeout", label: "BackupTimeout (minutes, optional)", type: "number", value: "", required: false },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    const backupStorage = buildBackupStorageDescription(values);
+    return {
+      action: "BackupPartition",
+      partitionId,
+      body: backupStorage ? { BackupStorage: backupStorage } : {},
+      backupTimeout: helper.parseOptionalInt(values.backupTimeout),
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptPartitionBackupProgressInput(partitionId) {
+    const values = await helper.openActionModal({
+      title: "Get Partition Backup Progress",
+      submitLabel: "Get Backup Progress",
+      cancelLabel: "Cancel",
+      message: `PartitionId: ${partitionId}`,
+      fields: [{ name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }]
+    });
+    if (!values) return null;
+    return { timeout: helper.parseOptionalInt(values.timeout) };
+  }
+
+  async function promptPartitionRestoreInput(partitionId) {
+    const values = await helper.openActionModal({
+      title: "Restore Partition",
+      submitLabel: "Restore Partition",
+      cancelLabel: "Cancel",
+      message: `PartitionId: ${partitionId}`,
+      fields: [
+        { name: "backupId", label: "Backup ID", value: "", required: true },
+        { name: "backupLocation", label: "Backup Location", value: "", required: true },
+        {
+          name: "storageKind",
+          label: "Storage Kind",
+          type: "select",
+          value: "",
+          required: false,
+          options: [
+            { value: "", label: "(use current backup policy)" },
+            { value: "AzureBlobStore", label: "AzureBlobStore" },
+            { value: "FileShare", label: "FileShare" }
+          ]
+        },
+        { name: "connectionString", label: "Azure Connection String", value: "", required: false },
+        { name: "containerName", label: "Azure Container Name", value: "", required: false },
+        { name: "path", label: "FileShare Path", value: "", required: false },
+        { name: "primaryUserName", label: "FileShare Primary User Name", value: "", required: false },
+        { name: "primaryPassword", label: "FileShare Primary Password", type: "password", value: "", required: false },
+        { name: "secondaryUserName", label: "FileShare Secondary User Name", value: "", required: false },
+        { name: "secondaryPassword", label: "FileShare Secondary Password", type: "password", value: "", required: false },
+        { name: "restoreTimeout", label: "RestoreTimeout (minutes, optional)", type: "number", value: "", required: false },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    const backupId = String(values.backupId || "").trim();
+    const backupLocation = String(values.backupLocation || "").trim();
+    if (!backupId || !backupLocation) {
+      throw new Error("BackupId and BackupLocation are required for RestorePartition.");
+    }
+    const backupStorage = buildBackupStorageDescription(values);
+    const body = {
+      BackupId: backupId,
+      BackupLocation: backupLocation
+    };
+    if (backupStorage) {
+      body.BackupStorage = backupStorage;
+    }
+    return {
+      action: "RestorePartition",
+      partitionId,
+      body,
+      restoreTimeout: helper.parseOptionalInt(values.restoreTimeout),
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptPartitionRestoreProgressInput(partitionId) {
+    const values = await helper.openActionModal({
+      title: "Get Partition Restore Progress",
+      submitLabel: "Get Restore Progress",
+      cancelLabel: "Cancel",
+      message: `PartitionId: ${partitionId}`,
+      fields: [{ name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }]
+    });
+    if (!values) return null;
+    return { timeout: helper.parseOptionalInt(values.timeout) };
+  }
+
   async function runPartitionAction(input) {
     const action = String(input.action || "").trim();
     const partitionId = String(input.partitionId || "").trim();
@@ -619,6 +877,8 @@
         "RecoverPartition",
         "ResetPartitionLoad",
         "StartDataLoss",
+        "BackupPartition",
+        "RestorePartition",
         "MovePrimaryReplica",
         "MoveSecondaryReplica",
         "ReportPartitionHealth"
@@ -632,6 +892,9 @@
     }
     if (action === "StartDataLoss" && (!partitionId || !serviceId)) {
       throw new Error("StartDataLoss requires both ServiceId and PartitionId.");
+    }
+    if (action === "StartPartitionRestart" && (!partitionId || !serviceId)) {
+      throw new Error("StartPartitionRestart requires both ServiceId and PartitionId.");
     }
 
     if (action === "RecoverPartition") {
@@ -731,10 +994,13 @@
     if (action === "MoveInstance") {
       const currentNodeName = String(input.currentNodeName || "").trim();
       const newNodeName = String(input.newNodeName || "").trim();
-      if (!currentNodeName || !newNodeName) {
-        throw new Error("CurrentNodeName and NewNodeName are required for MoveInstance.");
-      }
-      helper.setStatus(`Moving instance for ${serviceId}/${partitionId} from ${currentNodeName} to ${newNodeName}...`);
+      helper.setStatus(
+        currentNodeName || newNodeName
+          ? `Moving instance for ${serviceId}/${partitionId}${currentNodeName ? ` from ${currentNodeName}` : ""}${
+              newNodeName ? ` to ${newNodeName}` : " to a random eligible node"
+            }...`
+          : `Moving a random instance for ${serviceId}/${partitionId} to a random eligible node...`
+      );
       await postSfAction(
         `/Services/${encodeURIComponent(serviceId)}/$/GetPartitions/${encodeURIComponent(partitionId)}/$/MoveInstance`,
         {
@@ -748,6 +1014,27 @@
         }
       );
       helper.setStatus(`MoveInstance requested for partition ${partitionId}.`, "success");
+      return;
+    }
+    if (action === "StartPartitionRestart") {
+      const operationId = String(input.operationId || "").trim() || helper.generateOperationId();
+      const restartPartitionMode = String(input.restartPartitionMode || "").trim();
+      if (!restartPartitionMode) {
+        throw new Error("RestartPartitionMode is required for StartPartitionRestart.");
+      }
+      helper.setStatus(`Starting partition restart for ${serviceId}/${partitionId}...`);
+      await postSfAction(
+        `/Faults/Services/${encodeURIComponent(serviceId)}/$/GetPartitions/${encodeURIComponent(partitionId)}/$/StartRestart`,
+        {
+          apiVersion: "6.0",
+          query: {
+            OperationId: operationId,
+            RestartPartitionMode: restartPartitionMode,
+            timeout
+          }
+        }
+      );
+      helper.setStatus(`StartPartitionRestart accepted for partition ${partitionId}. OperationId: ${operationId}`, "success");
       return;
     }
     if (action === "MoveAuxiliaryReplica") {
@@ -772,6 +1059,35 @@
         }
       );
       helper.setStatus(`MoveAuxiliaryReplica requested for partition ${partitionId}.`, "success");
+      return;
+    }
+    if (action === "BackupPartition") {
+      helper.setStatus(`Starting backup for partition ${partitionId}...`);
+      await postSfAction(`/Partitions/${encodeURIComponent(partitionId)}/$/Backup`, {
+        apiVersion: "6.4",
+        query: {
+          BackupTimeout: helper.parseOptionalInt(input.backupTimeout),
+          timeout
+        },
+        body: input.body || {}
+      });
+      helper.setStatus(`BackupPartition accepted for partition ${partitionId}.`, "success");
+      return;
+    }
+    if (action === "RestorePartition") {
+      if (!input.body) {
+        throw new Error("RestorePartitionDescription body is required for RestorePartition.");
+      }
+      helper.setStatus(`Starting restore for partition ${partitionId}...`);
+      await postSfAction(`/Partitions/${encodeURIComponent(partitionId)}/$/Restore`, {
+        apiVersion: "6.4",
+        query: {
+          RestoreTimeout: helper.parseOptionalInt(input.restoreTimeout),
+          timeout
+        },
+        body: input.body
+      });
+      helper.setStatus(`RestorePartition accepted for partition ${partitionId}.`, "success");
       return;
     }
     if (action === "UpdatePartitionLoad") {
@@ -926,6 +1242,95 @@
     helper.setStatus(`Repair task ${repairTask.TaskId} created.`, "success");
   }
 
+  async function forceApproveRepairTask(taskId, options = {}) {
+    const payload = {
+      TaskId: String(taskId || "").trim(),
+      Version: String(options.version || "0").trim() || "0"
+    };
+    if (!payload.TaskId) {
+      throw new Error("TaskId is required for ForceApproveRepairTask.");
+    }
+    helper.setStatus(`Force-approving repair task ${payload.TaskId}...`);
+    await postSfAction("/$/ForceApproveRepairTask", {
+      apiVersion: options.apiVersion || "6.0",
+      body: payload
+    });
+    helper.setStatus(`Force approval requested for repair task ${payload.TaskId}.`, "success");
+  }
+
+  async function updateRepairExecutionState(repairTask, options = {}) {
+    if (!repairTask || typeof repairTask !== "object") {
+      throw new Error("RepairTask payload is required for UpdateRepairExecutionState.");
+    }
+    if (!repairTask.TaskId) {
+      throw new Error("RepairTask.TaskId is required for UpdateRepairExecutionState.");
+    }
+    helper.setStatus(`Updating execution state for repair task ${repairTask.TaskId}...`);
+    await postSfAction("/$/UpdateRepairExecutionState", {
+      apiVersion: options.apiVersion || "6.0",
+      body: repairTask
+    });
+    helper.setStatus(`UpdateRepairExecutionState requested for ${repairTask.TaskId}.`, "success");
+  }
+
+  async function updateRepairTaskHealthPolicy(taskId, options = {}) {
+    const payload = {
+      TaskId: String(taskId || "").trim(),
+      Version: String(options.version || "0").trim() || "0"
+    };
+    if (!payload.TaskId) {
+      throw new Error("TaskId is required for UpdateRepairTaskHealthPolicy.");
+    }
+    if (options.performPreparingHealthCheck !== null && options.performPreparingHealthCheck !== undefined) {
+      payload.PerformPreparingHealthCheck = !!options.performPreparingHealthCheck;
+    }
+    if (options.performRestoringHealthCheck !== null && options.performRestoringHealthCheck !== undefined) {
+      payload.PerformRestoringHealthCheck = !!options.performRestoringHealthCheck;
+    }
+    helper.setStatus(`Updating repair task health policy for ${payload.TaskId}...`);
+    await postSfAction("/$/UpdateRepairTaskHealthPolicy", {
+      apiVersion: options.apiVersion || "6.0",
+      body: payload
+    });
+    helper.setStatus(`UpdateRepairTaskHealthPolicy requested for ${payload.TaskId}.`, "success");
+  }
+
+  async function getPartitionRestartProgress(serviceId, partitionId, operationId, options = {}) {
+    const normalizedServiceId = helper.normalizeServiceId(serviceId);
+    if (!normalizedServiceId || !partitionId || !operationId) {
+      throw new Error("ServiceId, PartitionId, and OperationId are required for GetPartitionRestartProgress.");
+    }
+    return getSfJson(
+      `/Faults/Services/${encodeURIComponent(normalizedServiceId)}/$/GetPartitions/${encodeURIComponent(
+        partitionId
+      )}/$/GetRestartProgress`,
+      {
+        apiVersion: options.apiVersion || "6.0",
+        query: { OperationId: operationId, timeout: options.timeout }
+      }
+    );
+  }
+
+  async function getPartitionBackupProgress(partitionId, options = {}) {
+    if (!partitionId) {
+      throw new Error("PartitionId is required for GetPartitionBackupProgress.");
+    }
+    return getSfJson(`/Partitions/${encodeURIComponent(partitionId)}/$/GetBackupProgress`, {
+      apiVersion: options.apiVersion || "6.4",
+      query: { timeout: options.timeout }
+    });
+  }
+
+  async function getPartitionRestoreProgress(partitionId, options = {}) {
+    if (!partitionId) {
+      throw new Error("PartitionId is required for GetPartitionRestoreProgress.");
+    }
+    return getSfJson(`/Partitions/${encodeURIComponent(partitionId)}/$/GetRestoreProgress`, {
+      apiVersion: options.apiVersion || "6.4",
+      query: { timeout: options.timeout }
+    });
+  }
+
   function isRepairTasksView() {
     const href = window.location.href || "";
     return /#\/repairtasks\b/i.test(href);
@@ -1045,12 +1450,25 @@
     promptScaleServiceInput,
     promptMovePrimaryReplicaInput,
     promptMoveSecondaryReplicaInput,
+    promptMoveInstanceInput,
+    promptStartPartitionRestartInput,
+    promptPartitionRestartProgressInput,
+    promptPartitionBackupInput,
+    promptPartitionBackupProgressInput,
+    promptPartitionRestoreInput,
+    promptPartitionRestoreProgressInput,
     runPartitionAction,
     buildDefaultRepairTaskId,
     normalizeNodeList,
     promptRepairTaskInput,
     confirmStartDataLoss,
     createRepairTask,
+    forceApproveRepairTask,
+    updateRepairExecutionState,
+    updateRepairTaskHealthPolicy,
+    getPartitionRestartProgress,
+    getPartitionBackupProgress,
+    getPartitionRestoreProgress,
     isRepairTasksView,
     extractRepairTaskIdFromRow,
     extractRepairTaskStateFromRow,

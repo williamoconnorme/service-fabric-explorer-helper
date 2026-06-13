@@ -332,9 +332,19 @@
     return !!result;
   }
 
+  async function showMessageModal(title, message, closeLabel = "Close") {
+    await openActionModal({
+      title,
+      submitLabel: closeLabel,
+      cancelLabel: closeLabel,
+      message
+    });
+  }
+
   Object.assign(helper, {
     ensureActionModalStyles,
     openActionModal,
-    confirmWithActionModal
+    confirmWithActionModal,
+    showMessageModal
   });
 })();

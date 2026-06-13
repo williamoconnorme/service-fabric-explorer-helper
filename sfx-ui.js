@@ -2,6 +2,7 @@
   const helper = (window.SfxHelper = window.SfxHelper || {});
   if (helper.uiLoaded) return;
   helper.uiLoaded = true;
+  const serviceKindCache = new Map();
 
   function validate(partitionId, replicaId, nodeName) {
     if (!partitionId) {
@@ -24,6 +25,7 @@
     if (details.serviceId) lines.push(`ServiceId: ${details.serviceId}`);
     if (details.partitionId) lines.push(`PartitionId: ${details.partitionId}`);
     if (details.operationId) lines.push(`OperationId: ${details.operationId}`);
+    if (details.restartPartitionMode) lines.push(`RestartPartitionMode: ${details.restartPartitionMode}`);
     if (details.dataLossMode) lines.push(`DataLossMode: ${details.dataLossMode}`);
     if (details.apiVersion) lines.push(`api-version: ${details.apiVersion}`);
     return helper.confirmWithActionModal(`Confirm ${action}`, lines.join("\n"), submitLabel);
@@ -81,6 +83,22 @@
     }
 
     return "";
+  }
+
+  async function getServiceKind(serviceId) {
+    const normalizedServiceId = helper.normalizeServiceId(serviceId || "");
+    if (!normalizedServiceId) return "";
+    if (serviceKindCache.has(normalizedServiceId)) {
+      return serviceKindCache.get(normalizedServiceId);
+    }
+    const pending = helper
+      .getServiceDescription(normalizedServiceId, { apiVersion: "6.0" })
+      .then((description) => String(description.ServiceKind || description.Kind || "").trim())
+      .catch(() => "");
+    serviceKindCache.set(normalizedServiceId, pending);
+    const serviceKind = await pending;
+    serviceKindCache.set(normalizedServiceId, serviceKind);
+    return serviceKind;
   }
 
   function tryAttachInlineButtons() {
@@ -167,6 +185,34 @@
         row.dataset.sfxRepairTaskRowAugmented = "1";
 
         const btnCell = document.createElement("td");
+        const forceApproveBtn = document.createElement("button");
+        forceApproveBtn.className = "simple-button";
+        forceApproveBtn.textContent = "Force Approve";
+        forceApproveBtn.title = `Force approve repair task ${taskId}`;
+        if (/^(approved|executing|restoring|completed)$/i.test(stateText)) {
+          forceApproveBtn.disabled = true;
+          forceApproveBtn.title = `Force approve is not applicable in state ${stateText || "unknown"}`;
+        }
+        forceApproveBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const raw = helper.parseRawRepairJobFromExpandedRow(row) || {};
+          const currentTaskId = String(raw.TaskId || taskId || "").trim();
+          const currentVersion = String(raw.Version || "0").trim() || "0";
+          const currentState = String(raw.State || stateText || "").trim();
+          if (!currentTaskId) {
+            helper.setStatus("Could not determine repair task id for force approve.", "error");
+            return;
+          }
+          const confirmed = await helper.confirmWithActionModal(
+            "Confirm Force Approve Repair Task",
+            `TaskId: ${currentTaskId}\nVersion: ${currentVersion}\nState: ${currentState || "(unknown)"}\napi-version: 6.0`,
+            "Force Approve"
+          );
+          if (!confirmed) return;
+          helper.forceApproveRepairTask(currentTaskId, { apiVersion: "6.0", version: currentVersion }).catch((err) =>
+            helper.setStatus(err.message, "error")
+          );
+        });
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "simple-button";
         cancelBtn.textContent = "Cancel Repair";
@@ -230,8 +276,217 @@
             helper.setStatus(err.message, "error")
           );
         });
+        const updateStateBtn = document.createElement("button");
+        updateStateBtn.className = "simple-button";
+        updateStateBtn.textContent = "Update State";
+        updateStateBtn.title = `Update execution state for repair task ${taskId}`;
+        updateStateBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const raw = helper.parseRawRepairJobFromExpandedRow(row);
+          if (!raw) {
+            helper.setStatus("Expand the repair task row first so the raw repair job payload is available.", "warning");
+            return;
+          }
+          const values = await helper.openActionModal({
+            title: "Update Repair Execution State",
+            submitLabel: "Update State",
+            cancelLabel: "Cancel",
+            message: `TaskId: ${raw.TaskId || taskId}\nVersion: ${raw.Version || "0"}`,
+            fields: [
+              {
+                name: "state",
+                label: "State",
+                type: "select",
+                value: String(raw.State || "").trim(),
+                required: true,
+                options: [
+                  "Created",
+                  "Claimed",
+                  "Preparing",
+                  "Approved",
+                  "Executing",
+                  "Restoring",
+                  "Completed"
+                ].map((value) => ({ value, label: value }))
+              },
+              { name: "executor", label: "Executor", value: String(raw.Executor || ""), required: false },
+              { name: "executorData", label: "Executor Data", value: String(raw.ExecutorData || ""), required: false },
+              {
+                name: "resultStatus",
+                label: "Result Status",
+                type: "select",
+                value: String(raw.ResultStatus || "").trim(),
+                required: false,
+                options: [
+                  { value: "", label: "(leave current value)" },
+                  ...["Succeeded", "Cancelled", "Interrupted", "Failed", "Pending"].map((value) => ({ value, label: value }))
+                ]
+              },
+              { name: "resultCode", label: "Result Code", type: "number", value: String(raw.ResultCode ?? ""), required: false },
+              { name: "resultDetails", label: "Result Details", value: String(raw.ResultDetails || ""), required: false },
+              {
+                name: "impactJson",
+                label: "Impact JSON",
+                type: "textarea",
+                value: raw.Impact ? JSON.stringify(raw.Impact, null, 2) : "",
+                rows: 6,
+                required: false
+              },
+              {
+                name: "performPreparingHealthCheck",
+                label: "Perform Preparing Health Check",
+                type: "select",
+                value:
+                  raw.PerformPreparingHealthCheck === undefined || raw.PerformPreparingHealthCheck === null
+                    ? ""
+                    : String(!!raw.PerformPreparingHealthCheck),
+                required: false,
+                options: [
+                  { value: "", label: "(leave current value)" },
+                  { value: "true", label: "true" },
+                  { value: "false", label: "false" }
+                ]
+              },
+              {
+                name: "performRestoringHealthCheck",
+                label: "Perform Restoring Health Check",
+                type: "select",
+                value:
+                  raw.PerformRestoringHealthCheck === undefined || raw.PerformRestoringHealthCheck === null
+                    ? ""
+                    : String(!!raw.PerformRestoringHealthCheck),
+                required: false,
+                options: [
+                  { value: "", label: "(leave current value)" },
+                  { value: "true", label: "true" },
+                  { value: "false", label: "false" }
+                ]
+              }
+            ]
+          });
+          if (!values) return;
+          const updatedTask = { ...raw };
+          updatedTask.State = String(values.state || "").trim();
+          updatedTask.Version = String(raw.Version || "0").trim() || "0";
+          updatedTask.Executor = String(values.executor || "").trim();
+          updatedTask.ExecutorData = String(values.executorData || "").trim();
+          const resultStatus = String(values.resultStatus || "").trim();
+          if (resultStatus) {
+            updatedTask.ResultStatus = resultStatus;
+          }
+          const resultCode = helper.parseOptionalInt(values.resultCode);
+          if (resultCode !== null) {
+            updatedTask.ResultCode = resultCode;
+          }
+          const resultDetails = String(values.resultDetails || "").trim();
+          if (resultDetails) {
+            updatedTask.ResultDetails = resultDetails;
+          }
+          const impactJson = String(values.impactJson || "").trim();
+          if (impactJson) {
+            try {
+              updatedTask.Impact = JSON.parse(impactJson);
+            } catch (err) {
+              helper.setStatus(`Impact JSON is invalid: ${err.message}`, "error");
+              return;
+            }
+          }
+          const preparingBool = helper.parseOptionalBool(values.performPreparingHealthCheck);
+          if (preparingBool !== null) {
+            updatedTask.PerformPreparingHealthCheck = preparingBool;
+          }
+          const restoringBool = helper.parseOptionalBool(values.performRestoringHealthCheck);
+          if (restoringBool !== null) {
+            updatedTask.PerformRestoringHealthCheck = restoringBool;
+          }
+          const confirmed = await helper.confirmWithActionModal(
+            "Confirm Update Repair Execution State",
+            `TaskId: ${updatedTask.TaskId}\nVersion: ${updatedTask.Version}\nState: ${updatedTask.State}\napi-version: 6.0`,
+            "Update State"
+          );
+          if (!confirmed) return;
+          helper.updateRepairExecutionState(updatedTask, { apiVersion: "6.0" }).catch((err) =>
+            helper.setStatus(err.message, "error")
+          );
+        });
+        const updateHealthPolicyBtn = document.createElement("button");
+        updateHealthPolicyBtn.className = "simple-button";
+        updateHealthPolicyBtn.textContent = "Health Policy";
+        updateHealthPolicyBtn.title = `Update health policy for repair task ${taskId}`;
+        updateHealthPolicyBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const raw = helper.parseRawRepairJobFromExpandedRow(row) || {};
+          const currentTaskId = String(raw.TaskId || taskId || "").trim();
+          const currentVersion = String(raw.Version || "0").trim() || "0";
+          if (!currentTaskId) {
+            helper.setStatus("Could not determine repair task id for health policy update.", "error");
+            return;
+          }
+          const values = await helper.openActionModal({
+            title: "Update Repair Task Health Policy",
+            submitLabel: "Update Health Policy",
+            cancelLabel: "Cancel",
+            message: `TaskId: ${currentTaskId}\nVersion: ${currentVersion}`,
+            fields: [
+              {
+                name: "performPreparingHealthCheck",
+                label: "Perform Preparing Health Check",
+                type: "select",
+                value:
+                  raw.PerformPreparingHealthCheck === undefined || raw.PerformPreparingHealthCheck === null
+                    ? ""
+                    : String(!!raw.PerformPreparingHealthCheck),
+                required: false,
+                options: [
+                  { value: "", label: "(leave current value)" },
+                  { value: "true", label: "true" },
+                  { value: "false", label: "false" }
+                ]
+              },
+              {
+                name: "performRestoringHealthCheck",
+                label: "Perform Restoring Health Check",
+                type: "select",
+                value:
+                  raw.PerformRestoringHealthCheck === undefined || raw.PerformRestoringHealthCheck === null
+                    ? ""
+                    : String(!!raw.PerformRestoringHealthCheck),
+                required: false,
+                options: [
+                  { value: "", label: "(leave current value)" },
+                  { value: "true", label: "true" },
+                  { value: "false", label: "false" }
+                ]
+              }
+            ]
+          });
+          if (!values) return;
+          const performPreparingHealthCheck = helper.parseOptionalBool(values.performPreparingHealthCheck);
+          const performRestoringHealthCheck = helper.parseOptionalBool(values.performRestoringHealthCheck);
+          if (performPreparingHealthCheck === null && performRestoringHealthCheck === null) {
+            helper.setStatus("Select at least one health policy value to update.", "warning");
+            return;
+          }
+          const confirmed = await helper.confirmWithActionModal(
+            "Confirm Update Repair Task Health Policy",
+            `TaskId: ${currentTaskId}\nVersion: ${currentVersion}\napi-version: 6.0`,
+            "Update Health Policy"
+          );
+          if (!confirmed) return;
+          helper
+            .updateRepairTaskHealthPolicy(currentTaskId, {
+              apiVersion: "6.0",
+              version: currentVersion,
+              performPreparingHealthCheck,
+              performRestoringHealthCheck
+            })
+            .catch((err) => helper.setStatus(err.message, "error"));
+        });
+        btnCell.appendChild(forceApproveBtn);
         btnCell.appendChild(cancelBtn);
         btnCell.appendChild(deleteBtn);
+        btnCell.appendChild(updateStateBtn);
+        btnCell.appendChild(updateHealthPolicyBtn);
         row.appendChild(btnCell);
       });
     });
@@ -569,8 +824,8 @@
 
       const partitionContext = helper.collectRoutePartitionContext(menu);
       const hasPartitionContext = !!partitionContext.partitionId || !!partitionContext.serviceId;
-      if (menuEntityType === "partition" && hasPartitionContext && !menu.dataset.sfxPartitionMenuAugmented) {
-        menu.dataset.sfxPartitionMenuAugmented = "1";
+      if (menuEntityType === "partition" && hasPartitionContext && !menu.dataset.sfxPartitionMenuAugmented && !menu.dataset.sfxPartitionMenuPending) {
+        menu.dataset.sfxPartitionMenuPending = "1";
         const menuClassName = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
         const addPartitionActionBtn = (label, buildInput, buildConfirm) => {
           const btn = document.createElement("button");
@@ -578,62 +833,201 @@
           btn.className = menuClassName;
           btn.addEventListener("click", async (ev) => {
             ev.stopPropagation();
-            const context = helper.collectRoutePartitionContext(menu);
-            const input = await buildInput(context);
-            if (!input) return;
-            const confirmed = await buildConfirm(input);
-            if (!confirmed) return;
-            helper.runPartitionAction(input).catch((err) => helper.setStatus(err.message, "error"));
+            try {
+              const context = helper.collectRoutePartitionContext(menu);
+              const input = await buildInput(context);
+              if (!input) return;
+              const confirmed = await buildConfirm(input);
+              if (!confirmed) return;
+              helper.runPartitionAction(input).catch((err) => helper.setStatus(err.message, "error"));
+            } catch (err) {
+              helper.setStatus(err.message, "error");
+            }
           });
           menu.appendChild(btn);
         };
+        (async () => {
+          try {
+            const currentContext = helper.collectRoutePartitionContext(menu);
+            const currentPartitionId = String(currentContext.partitionId || "").trim();
+            const currentServiceId = helper.normalizeServiceId(currentContext.serviceId || "");
+            const serviceKind = currentServiceId ? await getServiceKind(currentServiceId) : "";
+            const isStateful = serviceKind === "Stateful";
+            const isStateless = serviceKind === "Stateless";
 
-        if (partitionContext.partitionId) {
-          addPartitionActionBtn(
-            "Recover Partition",
-            (context) => ({
-              action: "RecoverPartition",
-              partitionId: String(context.partitionId || "").trim()
-            }),
-            (input) => confirmPartitionAction("RecoverPartition", { partitionId: input.partitionId, apiVersion: "6.0" }, "Recover Partition")
-          );
+            if (currentPartitionId) {
+              addPartitionActionBtn(
+                "Recover Partition",
+                (context) => ({
+                  action: "RecoverPartition",
+                  partitionId: String(context.partitionId || "").trim()
+                }),
+                (input) =>
+                  confirmPartitionAction("RecoverPartition", { partitionId: input.partitionId, apiVersion: "6.0" }, "Recover Partition")
+              );
 
-          addPartitionActionBtn(
-            "Reset Partition Load",
-            (context) => ({
-              action: "ResetPartitionLoad",
-              partitionId: String(context.partitionId || "").trim()
-            }),
-            (input) =>
-              confirmPartitionAction("ResetPartitionLoad", { partitionId: input.partitionId, apiVersion: "6.0" }, "Reset Partition Load")
-          );
+              addPartitionActionBtn(
+                "Reset Partition Load",
+                (context) => ({
+                  action: "ResetPartitionLoad",
+                  partitionId: String(context.partitionId || "").trim()
+                }),
+                (input) =>
+                  confirmPartitionAction("ResetPartitionLoad", { partitionId: input.partitionId, apiVersion: "6.0" }, "Reset Partition Load")
+              );
 
-          addPartitionActionBtn(
-            "Move Primary Replica",
-            async (context) => helper.promptMovePrimaryReplicaInput(String(context.partitionId || "").trim()),
-            async (input) => !!input
-          );
+              if (isStateful || !currentServiceId) {
+                addPartitionActionBtn(
+                  "Move Primary Replica",
+                  async (context) => helper.promptMovePrimaryReplicaInput(String(context.partitionId || "").trim()),
+                  async (input) => !!input
+                );
 
-          addPartitionActionBtn(
-            "Move Secondary Replica",
-            async (context) => helper.promptMoveSecondaryReplicaInput(String(context.partitionId || "").trim()),
-            async (input) => !!input
-          );
-        }
+                addPartitionActionBtn(
+                  "Move Secondary Replica",
+                  async (context) => helper.promptMoveSecondaryReplicaInput(String(context.partitionId || "").trim()),
+                  async (input) => !!input
+                );
+              }
 
-        if (partitionContext.partitionId && partitionContext.serviceId) {
-          addPartitionActionBtn(
-            "Start Data Loss",
-            (context) => ({
-              action: "StartDataLoss",
-              partitionId: String(context.partitionId || "").trim(),
-              serviceId: helper.normalizeServiceId(context.serviceId || ""),
-              operationId: helper.generateOperationId()
-            }),
-            (input) => helper.confirmStartDataLoss(input.serviceId, input.partitionId, input.operationId)
-          );
-        }
+              if (isStateful) {
+                addPartitionActionBtn(
+                  "Backup Partition",
+                  async (context) => helper.promptPartitionBackupInput(String(context.partitionId || "").trim()),
+                  async (input) =>
+                    !!input &&
+                    (await confirmPartitionAction("BackupPartition", { partitionId: input.partitionId, apiVersion: "6.4" }, "Backup Partition"))
+                );
 
+                addPartitionActionBtn(
+                  "Get Backup Progress",
+                  async (context) => {
+                    const input = await helper.promptPartitionBackupProgressInput(String(context.partitionId || "").trim());
+                    if (!input) return null;
+                    try {
+                      const progress = await helper.getPartitionBackupProgress(String(context.partitionId || "").trim(), {
+                        apiVersion: "6.4",
+                        timeout: input.timeout
+                      });
+                      await helper.showMessageModal("Partition Backup Progress", JSON.stringify(progress, null, 2));
+                    } catch (err) {
+                      helper.setStatus(err.message, "error");
+                    }
+                    return null;
+                  },
+                  async () => false
+                );
+
+                addPartitionActionBtn(
+                  "Restore Partition",
+                  async (context) => helper.promptPartitionRestoreInput(String(context.partitionId || "").trim()),
+                  async (input) =>
+                    !!input &&
+                    (await confirmPartitionAction("RestorePartition", { partitionId: input.partitionId, apiVersion: "6.4" }, "Restore Partition"))
+                );
+
+                addPartitionActionBtn(
+                  "Get Restore Progress",
+                  async (context) => {
+                    const input = await helper.promptPartitionRestoreProgressInput(String(context.partitionId || "").trim());
+                    if (!input) return null;
+                    try {
+                      const progress = await helper.getPartitionRestoreProgress(String(context.partitionId || "").trim(), {
+                        apiVersion: "6.4",
+                        timeout: input.timeout
+                      });
+                      await helper.showMessageModal("Partition Restore Progress", JSON.stringify(progress, null, 2));
+                    } catch (err) {
+                      helper.setStatus(err.message, "error");
+                    }
+                    return null;
+                  },
+                  async () => false
+                );
+              }
+            }
+
+            if (currentPartitionId && currentServiceId) {
+              if (isStateless) {
+                addPartitionActionBtn(
+                  "Move Instance",
+                  async (context) => {
+                    const serviceId = helper.normalizeServiceId(context.serviceId || "");
+                    const partitionId = String(context.partitionId || "").trim();
+                    return helper.promptMoveInstanceInput(serviceId, partitionId);
+                  },
+                  async (input) =>
+                    !!input &&
+                    (await confirmPartitionAction(
+                      "MoveInstance",
+                      { serviceId: input.serviceId, partitionId: input.partitionId, apiVersion: "8.0" },
+                      "Move Instance"
+                    ))
+                );
+              }
+
+              if (isStateful) {
+                addPartitionActionBtn(
+                  "Start Data Loss",
+                  (context) => ({
+                    action: "StartDataLoss",
+                    partitionId: String(context.partitionId || "").trim(),
+                    serviceId: helper.normalizeServiceId(context.serviceId || ""),
+                    operationId: helper.generateOperationId()
+                  }),
+                  (input) => helper.confirmStartDataLoss(input.serviceId, input.partitionId, input.operationId)
+                );
+              }
+
+              if (serviceKind) {
+                addPartitionActionBtn(
+                  "Start Partition Restart",
+                  async (context) => {
+                    const serviceId = helper.normalizeServiceId(context.serviceId || "");
+                    const partitionId = String(context.partitionId || "").trim();
+                    return helper.promptStartPartitionRestartInput(serviceId, partitionId, serviceKind);
+                  },
+                  (input) =>
+                    confirmPartitionAction(
+                      "StartPartitionRestart",
+                      {
+                        serviceId: input.serviceId,
+                        partitionId: input.partitionId,
+                        operationId: input.operationId,
+                        restartPartitionMode: input.restartPartitionMode,
+                        apiVersion: "6.0"
+                      },
+                      "Start Partition Restart"
+                    )
+                );
+
+                addPartitionActionBtn(
+                  "Get Restart Progress",
+                  async (context) => {
+                    const serviceId = helper.normalizeServiceId(context.serviceId || "");
+                    const partitionId = String(context.partitionId || "").trim();
+                    const input = await helper.promptPartitionRestartProgressInput(serviceId, partitionId);
+                    if (!input) return null;
+                    try {
+                      const progress = await helper.getPartitionRestartProgress(serviceId, partitionId, input.operationId, {
+                        apiVersion: "6.0",
+                        timeout: input.timeout
+                      });
+                      await helper.showMessageModal("Partition Restart Progress", JSON.stringify(progress, null, 2));
+                    } catch (err) {
+                      helper.setStatus(err.message, "error");
+                    }
+                    return null;
+                  },
+                  async () => false
+                );
+              }
+            }
+          } finally {
+            delete menu.dataset.sfxPartitionMenuPending;
+            menu.dataset.sfxPartitionMenuAugmented = "1";
+          }
+        })();
       }
 
       const menuActions = Array.from(menu.querySelectorAll("button, a")).map((b) => (b.textContent || "").trim().toLowerCase());

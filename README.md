@@ -22,14 +22,15 @@ Firefox extension that injects a small helper into Service Fabric Explorer pages
 6. On node contexts, the Actions dropdown gains **Create Repair Task** (uses `POST /$/CreateRepairTask?api-version=6.0`).
 7. Confirmation dialogs show replica/partition/node/service (or application/repair-task details) before executing.
 8. Repair task creation opens an SFX-styled modal with input fields for `TaskId`, `Action`, and target nodes, then posts a Node-targeted payload with state `Created`.
-9. On `#/repairtasks`, each repair job row gets **Cancel Repair** and **Delete Repair** buttons.
+9. On `#/repairtasks`, each repair job row gets **Force Approve**, **Cancel Repair**, **Delete Repair**, **Update State**, and **Health Policy** buttons.
 10. Cancel sends `TaskId`, `Version` (from expanded raw repair job when available, else `0`), and sets `RequestAbort=true` automatically for `Executing`/`Restoring` tasks.
 11. Delete uses `POST /$/DeleteRepairTask?api-version=6.0` with `TaskId` + `Version`, and is enabled only when the repair task state is `Completed`.
-12. In partition/service contexts, the Actions dropdown gains direct partition recovery actions with no input form.
-13. The extension infers ids from the selected UI node and adds **Recover Partition**, **Reset Partition Load**, **Move Primary Replica**, **Move Secondary Replica**, **Recover Service Partitions**, **Recover System Partitions**, **Recover All Partitions**, and **Start Data Loss** when the required context is available.
-14. **Start Data Loss** always uses `DataLossMode=FullDataLoss` and auto-generates an `OperationId`.
-15. **Move Primary Replica** and **Move Secondary Replica** open input modals and call the Service Fabric REST APIs for replica movement.
-16. On selected partition rows in the explorer tree, the extension injects a tree-view Actions toggle so those partition commands are available directly from the partition node.
+12. **Update State** and **Health Policy** use the expanded raw repair job payload when available, so expanding a repair-task row exposes the most complete editing surface.
+13. In partition/service contexts, the Actions dropdown gains direct partition recovery actions with no input form.
+14. The extension infers ids from the selected UI node and adds **Recover Partition**, **Reset Partition Load**, **Move Primary Replica**, **Move Secondary Replica**, **Move Instance**, **Backup Partition**, **Restore Partition**, **Recover Service Partitions**, **Recover System Partitions**, **Recover All Partitions**, **Start Data Loss**, **Start Partition Restart**, and progress lookups for restart/backup/restore when the required context is available.
+15. **Start Data Loss** always uses `DataLossMode=FullDataLoss` and auto-generates an `OperationId`.
+16. **Move Primary Replica**, **Move Secondary Replica**, **Move Instance**, **Backup Partition**, **Restore Partition**, and **Start Partition Restart** open input modals and call the corresponding Service Fabric REST APIs.
+17. On selected partition rows in the explorer tree, the extension injects a tree-view Actions toggle so those partition commands are available directly from the partition node.
 
 ### Inline buttons
 
