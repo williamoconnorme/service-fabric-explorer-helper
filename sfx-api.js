@@ -197,39 +197,145 @@
     AuxiliaryReplicaCount: 0x40000
   };
 
-  function getServiceUpdateFieldOrder(serviceKind) {
+  const DEFAULT_MOVE_COST_OPTIONS = ["Zero", "Low", "Medium", "High", "VeryHigh"];
+
+  function getServiceUpdateFieldDefinitions(serviceKind) {
     const common = [
-      "PlacementConstraints",
-      "ServicePlacementPolicies",
-      "CorrelationScheme",
-      "LoadMetrics",
-      "DefaultMoveCost",
-      "ScalingPolicies",
-      "ServiceDnsName",
-      "TagsForPlacement",
-      "TagsForRunning"
+      {
+        name: "PlacementConstraints",
+        label: "Placement Constraints",
+        type: "text",
+        placeholder: "(NodeType==backend)"
+      },
+      {
+        name: "ServicePlacementPolicies",
+        label: "Service Placement Policies",
+        type: "textarea",
+        parseType: "json",
+        rows: 4,
+        placeholder: '[{"Type":"InvalidDomain","DomainName":"fd:/dc1"}]'
+      },
+      {
+        name: "CorrelationScheme",
+        label: "Correlation Scheme",
+        type: "textarea",
+        parseType: "json",
+        rows: 4,
+        placeholder: '[{"ServiceName":"fabric:/App/OtherService","Scheme":"AlignedAffinity"}]'
+      },
+      {
+        name: "LoadMetrics",
+        label: "Load Metrics",
+        type: "textarea",
+        parseType: "json",
+        rows: 4,
+        placeholder: '[{"Name":"MetricA","Weight":"High","PrimaryDefaultLoad":5,"SecondaryDefaultLoad":1}]'
+      },
+      {
+        name: "DefaultMoveCost",
+        label: "Default Move Cost",
+        type: "select",
+        parseType: "enum",
+        options: [{ value: "", label: "(leave unset)" }, ...DEFAULT_MOVE_COST_OPTIONS.map((value) => ({ value, label: value }))]
+      },
+      {
+        name: "ScalingPolicies",
+        label: "Scaling Policies",
+        type: "textarea",
+        parseType: "json",
+        rows: 4,
+        placeholder: '[{"ScalingTrigger":{...},"ScalingMechanism":{...}}]'
+      },
+      {
+        name: "ServiceDnsName",
+        label: "Service DNS Name",
+        type: "text"
+      },
+      {
+        name: "TagsForPlacement",
+        label: "Tags For Placement",
+        type: "text"
+      },
+      {
+        name: "TagsForRunning",
+        label: "Tags For Running",
+        type: "text"
+      }
     ];
+
     if (serviceKind === "Stateful") {
       return [
-        "TargetReplicaSetSize",
-        "MinReplicaSetSize",
-        "ReplicaRestartWaitDurationSeconds",
-        "QuorumLossWaitDurationSeconds",
-        "StandByReplicaKeepDurationSeconds",
-        "ServicePlacementTimeLimitSeconds",
-        "DropSourceReplicaOnMove",
-        "AuxiliaryReplicaCount",
+        { name: "TargetReplicaSetSize", label: "Target Replica Set Size", type: "number", parseType: "integer" },
+        { name: "MinReplicaSetSize", label: "Min Replica Set Size", type: "number", parseType: "integer" },
+        {
+          name: "ReplicaRestartWaitDurationSeconds",
+          label: "Replica Restart Wait Duration Seconds",
+          type: "number",
+          parseType: "integer"
+        },
+        {
+          name: "QuorumLossWaitDurationSeconds",
+          label: "Quorum Loss Wait Duration Seconds",
+          type: "number",
+          parseType: "integer"
+        },
+        {
+          name: "StandByReplicaKeepDurationSeconds",
+          label: "StandBy Replica Keep Duration Seconds",
+          type: "number",
+          parseType: "integer"
+        },
+        {
+          name: "ServicePlacementTimeLimitSeconds",
+          label: "Service Placement Time Limit Seconds",
+          type: "number",
+          parseType: "integer"
+        },
+        {
+          name: "DropSourceReplicaOnMove",
+          label: "Drop Source Replica On Move",
+          type: "select",
+          parseType: "boolean",
+          options: [
+            { value: "", label: "(leave unset)" },
+            { value: "true", label: "true" },
+            { value: "false", label: "false" }
+          ]
+        },
+        { name: "AuxiliaryReplicaCount", label: "Auxiliary Replica Count", type: "number", parseType: "integer" },
         ...common
       ];
     }
+
     return [
-      "InstanceCount",
-      "MinInstanceCount",
-      "MinInstancePercentage",
-      "InstanceCloseDelayDurationSeconds",
-      "InstanceRestartWaitDurationSeconds",
+      { name: "InstanceCount", label: "Instance Count", type: "number", parseType: "integer" },
+      { name: "MinInstanceCount", label: "Min Instance Count", type: "number", parseType: "integer" },
+      { name: "MinInstancePercentage", label: "Min Instance Percentage", type: "number", parseType: "integer" },
+      {
+        name: "InstanceCloseDelayDurationSeconds",
+        label: "Instance Close Delay Duration Seconds",
+        type: "number",
+        parseType: "integer"
+      },
+      {
+        name: "InstanceRestartWaitDurationSeconds",
+        label: "Instance Restart Wait Duration Seconds",
+        type: "number",
+        parseType: "integer"
+      },
       ...common
     ];
+  }
+
+  function getServiceUpdateFieldOrder(serviceKind) {
+    return getServiceUpdateFieldDefinitions(serviceKind).map((field) => field.name);
+  }
+
+  function toServiceUpdateFieldValue(value, parseType) {
+    if (value === undefined || value === null) return "";
+    if (parseType === "boolean") return value ? "true" : "false";
+    if (parseType === "json") return JSON.stringify(value, null, 2);
+    return String(value);
   }
 
   function buildServiceUpdateModel(serviceDescription) {
@@ -249,14 +355,6 @@
     return model;
   }
 
-  function stringifyServiceUpdateModel(serviceDescription) {
-    return JSON.stringify(buildServiceUpdateModel(serviceDescription), null, 2);
-  }
-
-  function summarizeSupportedUpdateFields(serviceKind) {
-    return getServiceUpdateFieldOrder(serviceKind).join(", ");
-  }
-
   function computeServiceUpdateFlags(serviceKind, updateBody) {
     const map = serviceKind === "Stateful" ? STATEFUL_UPDATE_FLAGS : STATELESS_UPDATE_FLAGS;
     let flags = 0;
@@ -268,24 +366,74 @@
     return flags;
   }
 
+  function parseServiceUpdateInteger(rawValue, label) {
+    const trimmed = String(rawValue || "").trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+      throw new Error(`${label} must be an integer.`);
+    }
+    return trimmed;
+  }
+
+  function parseServiceUpdateJson(rawValue, label) {
+    const trimmed = String(rawValue || "").trim();
+    if (!trimmed) return undefined;
+    try {
+      return JSON.parse(trimmed);
+    } catch (err) {
+      throw new Error(`${label} must be valid JSON: ${err.message}`);
+    }
+  }
+
+  function parseServiceUpdateField(field, rawValue) {
+    const trimmed = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+    if (field.parseType === "integer") {
+      return parseServiceUpdateInteger(rawValue, field.label || field.name);
+    }
+    if (field.parseType === "json") {
+      return parseServiceUpdateJson(rawValue, field.label || field.name);
+    }
+    if (field.parseType === "boolean") {
+      if (!trimmed) return undefined;
+      const parsed = helper.parseOptionalBool(trimmed);
+      if (parsed === null) {
+        throw new Error(`${field.label || field.name} must be true or false.`);
+      }
+      return parsed;
+    }
+    if (field.parseType === "enum") {
+      if (!trimmed) return undefined;
+      if (!DEFAULT_MOVE_COST_OPTIONS.includes(trimmed)) {
+        throw new Error(`${field.label || field.name} has an unsupported value.`);
+      }
+      return trimmed;
+    }
+    if (trimmed === undefined || trimmed === null || trimmed === "") {
+      return undefined;
+    }
+    return trimmed;
+  }
+
   async function promptUpdateServiceInput(serviceId, serviceDescription) {
     const serviceKind = String(
       serviceDescription.ServiceKind || serviceDescription.serviceKind || serviceDescription.Kind || ""
     ).trim();
+    if (serviceKind !== "Stateful" && serviceKind !== "Stateless") {
+      throw new Error(`Unsupported service kind for update: ${serviceKind || "unknown"}`);
+    }
+
+    const fieldDefinitions = getServiceUpdateFieldDefinitions(serviceKind);
     const values = await helper.openActionModal({
       title: `Update ${serviceKind} Service`,
       submitLabel: "Update Service",
       cancelLabel: "Cancel",
-      message: `ServiceId: ${serviceId}\nSupported properties: ${summarizeSupportedUpdateFields(serviceKind)}`,
+      message: `ServiceId: ${serviceId}\nLeave a field blank to omit it from the update payload.`,
       fields: [
-        {
-          name: "updateJson",
-          label: "UpdateService body",
-          type: "textarea",
-          value: stringifyServiceUpdateModel(serviceDescription),
-          rows: 18,
-          required: true
-        },
+        ...fieldDefinitions.map((field) => ({
+          ...field,
+          value: toServiceUpdateFieldValue(serviceDescription[field.name], field.parseType)
+        })),
         {
           name: "timeout",
           label: "timeout (seconds, optional)",
@@ -297,32 +445,24 @@
     });
     if (!values) return null;
 
-    let parsed = null;
-    try {
-      parsed = JSON.parse(String(values.updateJson || "").trim());
-    } catch (err) {
-      throw new Error(`UpdateService JSON is invalid: ${err.message}`);
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("UpdateService body must be a JSON object.");
-    }
+    const body = { ServiceKind: serviceKind };
+    fieldDefinitions.forEach((field) => {
+      const parsedValue = parseServiceUpdateField(field, values[field.name]);
+      if (parsedValue !== undefined) {
+        body[field.name] = parsedValue;
+      }
+    });
 
-    const normalizedKind = String(parsed.ServiceKind || serviceKind).trim();
-    if (normalizedKind !== serviceKind) {
-      throw new Error(`ServiceKind must remain ${serviceKind}.`);
-    }
-    parsed.ServiceKind = serviceKind;
-
-    const flags = computeServiceUpdateFlags(serviceKind, parsed);
+    const flags = computeServiceUpdateFlags(serviceKind, body);
     if (!flags) {
-      throw new Error("UpdateService body must contain at least one updatable property.");
+      throw new Error("Set at least one update field before submitting Update Service.");
     }
-    parsed.Flags = String(flags);
+    body.Flags = String(flags);
 
     return {
       serviceKind,
       timeout: helper.parseOptionalInt(values.timeout),
-      body: parsed
+      body
     };
   }
 
@@ -899,7 +1039,6 @@
     getSfJson,
     getServiceDescription,
     buildServiceUpdateModel,
-    stringifyServiceUpdateModel,
     promptUpdateServiceInput,
     updateService,
     updateServiceScale,

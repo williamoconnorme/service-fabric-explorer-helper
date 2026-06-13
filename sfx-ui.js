@@ -495,6 +495,33 @@
       const serviceContext = helper.collectRouteServiceContext(menu);
       if (menuEntityType === "service" && serviceContext.serviceId && !menu.dataset.sfxServiceMenuAugmented) {
         menu.dataset.sfxServiceMenuAugmented = "1";
+        const hasNativeScaleServiceBtn = Array.from(menu.querySelectorAll("button, a")).some(
+          (el) => (el.textContent || "").trim().toLowerCase() === "scale service"
+        );
+        if (!hasNativeScaleServiceBtn) {
+          const scaleServiceBtn = document.createElement("button");
+          scaleServiceBtn.textContent = "Scale Service";
+          scaleServiceBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+          scaleServiceBtn.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            const context = helper.collectRouteServiceContext(menu);
+            const serviceId = helper.normalizeServiceId(context.serviceId || "");
+            if (!serviceId) {
+              helper.setStatus("Could not determine service id for scale.", "error");
+              return;
+            }
+            try {
+              const description = await helper.getServiceDescription(serviceId, { apiVersion: "6.0" });
+              const update = await helper.promptScaleServiceInput(serviceId, description);
+              if (!update) return;
+              await helper.updateServiceScale(serviceId, update, { apiVersion: "6.0", timeout: update.timeout });
+            } catch (err) {
+              helper.setStatus(err.message, "error");
+            }
+          });
+          menu.appendChild(scaleServiceBtn);
+        }
+
         const updateServiceBtn = document.createElement("button");
         updateServiceBtn.textContent = "Update Service";
         updateServiceBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";

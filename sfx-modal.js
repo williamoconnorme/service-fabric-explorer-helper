@@ -46,6 +46,10 @@
       .sfx-helper-modal-host .modal-body .field-wrap input {
         width: 100%;
       }
+      .sfx-helper-modal-host .modal-body .field-wrap select,
+      .sfx-helper-modal-host .modal-body .field-wrap textarea {
+        width: 100%;
+      }
       .sfx-helper-modal-host .modal-message {
         white-space: pre-wrap;
         line-height: 1.35;
@@ -189,7 +193,7 @@
             const option = document.createElement("option");
             option.value = String(opt.value);
             option.textContent = opt.label || String(opt.value);
-            if (String(field.value || "") === option.value) {
+            if (String(field.value ?? "") === option.value) {
               option.selected = true;
             }
             input.appendChild(option);
@@ -204,7 +208,7 @@
           input = document.createElement("textarea");
           input.className = "input-flat ng-untouched ng-pristine ng-valid";
           input.name = field.name;
-          input.value = field.value || "";
+          input.value = field.value ?? "";
           input.placeholder = field.placeholder || "";
           input.rows = field.rows || 5;
           input.style.width = "100%";
@@ -213,7 +217,7 @@
           input.type = fieldType;
           input.className = "input-flat ng-untouched ng-pristine ng-valid";
           input.name = field.name;
-          input.value = field.value || "";
+          input.value = field.value ?? "";
           input.placeholder = field.placeholder || "";
         }
         if (field.required) input.setAttribute("required", "required");
