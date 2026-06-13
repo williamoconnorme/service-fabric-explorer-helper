@@ -14,6 +14,54 @@ Firefox extension that injects a small helper into Service Fabric Explorer pages
 
 ## Use
 
+### Action Summary
+
+#### Application
+
+- **Rollback Application**
+
+#### Service
+
+- **Scale Service**
+- **Update Service**
+- **Recover Service Partitions**
+
+#### Partition
+
+- **Recover Partition**
+- **Reset Partition Load**
+- **Start Partition Restart**
+- **Get Restart Progress**
+- **Start Data Loss** (stateful only)
+- **Move Primary Replica** (stateful only)
+- **Move Secondary Replica** (stateful only)
+- **Move Instance** (stateless only)
+- **Backup Partition** (stateful only)
+- **Get Backup Progress** (stateful only)
+- **Restore Partition** (stateful only)
+- **Get Restore Progress** (stateful only)
+- **Recover System Partitions**
+- **Recover All Partitions**
+
+#### Replica / Instance
+
+- **Delete Replica**
+- **Force Delete Replica**
+- Inline **Delete**
+- Inline **Force Delete**
+
+#### Node
+
+- **Create Repair Task**
+
+#### Repair Task
+
+- **Force Approve**
+- **Cancel Repair**
+- **Delete Repair**
+- **Update State**
+- **Health Policy**
+
 1. Browse to your Service Fabric Explorer (e.g. `https://localhost:19080/Explorer`).
 2. On replica tables, a **Delete / Force Delete** column is added. Buttons use the partition from the current route, the replica id from the row, and the node from the row (or page).
 3. On replica details pages, the Replica Actions dropdown gains **Delete Replica** and **Force Delete Replica** entries.
