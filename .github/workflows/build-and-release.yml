@@ -164,6 +164,40 @@ jobs:
           set -euo pipefail
 
           PACKAGE_PATH="dist/service-fabric-explorer-helper-${VERSION}-chrome.zip"
+          CURL_STATUS_FILE="$(mktemp)"
+          CURL_BODY_FILE="$(mktemp)"
+
+          chrome_api_request() {
+            local method="$1"
+            local url="$2"
+            shift 2
+
+            local http_code
+            http_code="$(
+              curl -sS \
+                -o "$CURL_BODY_FILE" \
+                -w '%{http_code}' \
+                -D "$CURL_STATUS_FILE" \
+                -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
+                -X "$method" \
+                "$@" \
+                "$url"
+            )"
+
+            if [[ ! "$http_code" =~ ^2 ]]; then
+              echo "Chrome Web Store API request failed." >&2
+              echo "URL: $url" >&2
+              echo "Method: $method" >&2
+              echo "HTTP status: $http_code" >&2
+              echo "Response headers:" >&2
+              sed 's/^/  /' "$CURL_STATUS_FILE" >&2 || true
+              echo "Response body:" >&2
+              sed 's/^/  /' "$CURL_BODY_FILE" >&2 || true
+              exit 1
+            fi
+
+            cat "$CURL_BODY_FILE"
+          }
 
           if [[ -z "$CHROME_ACCESS_TOKEN" ]]; then
             echo "Chrome service account authentication did not produce an access token." >&2
@@ -174,13 +208,7 @@ jobs:
           status_url="https://chromewebstore.googleapis.com/v2/publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}:fetchStatus"
           publish_url="https://chromewebstore.googleapis.com/v2/publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}:publish"
 
-          upload_response="$(
-            curl --fail-with-body -sS \
-              -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
-              -X POST \
-              -T "$PACKAGE_PATH" \
-              "$upload_url"
-          )"
+          upload_response="$(chrome_api_request POST "$upload_url" -T "$PACKAGE_PATH")"
           upload_state="$(jq -r '.uploadState // empty' <<<"$upload_response")"
           if [[ "$upload_state" == "FAILURE" || -z "$upload_state" ]]; then
             echo "Chrome upload failed." >&2
@@ -194,11 +222,7 @@ jobs:
             fi
 
             sleep 10
-            status_response="$(
-              curl --fail-with-body -sS \
-                -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
-                "$status_url"
-            )"
+            status_response="$(chrome_api_request GET "$status_url")"
             upload_state="$(jq -r '.uploadState // empty' <<<"$status_response")"
 
             if [[ "$upload_state" == "FAILURE" || -z "$upload_state" ]]; then
@@ -213,12 +237,7 @@ jobs:
             exit 1
           fi
 
-          publish_response="$(
-            curl --fail-with-body -sS \
-              -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
-              -X POST \
-              "$publish_url"
-          )"
+          publish_response="$(chrome_api_request POST "$publish_url")"
           item_state="$(jq -r '.itemState // empty' <<<"$publish_response")"
           if [[ -z "$item_state" ]]; then
             echo "Chrome publish response did not include an item state." >&2
