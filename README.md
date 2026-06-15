@@ -1,6 +1,6 @@
 # Service Fabric Explorer Firefox Helper
 
-Firefox extension that injects a small helper into Service Fabric Explorer pages so you can delete replicas directly (with optional inline buttons on replica tables).
+Browser extension for Firefox and Chromium-based browsers that augments Service Fabric Explorer with direct operational actions, inline table controls, and modal-driven workflows for replicas, partitions, services, nodes, applications, and repair tasks.
 
 ## Install (temporary)
 
