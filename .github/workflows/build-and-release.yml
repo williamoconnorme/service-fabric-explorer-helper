@@ -250,7 +250,7 @@ jobs:
           fi
 
           publish_response="$(chrome_api_request POST "$publish_url")"
-          item_state="$(jq -r '.itemState // empty' <<<"$publish_response")"
+          item_state="$(jq -r '.itemState // .state // empty' <<<"$publish_response")"
           if [[ -z "$item_state" ]]; then
             echo "Chrome publish response did not include an item state." >&2
             echo "$publish_response" >&2
