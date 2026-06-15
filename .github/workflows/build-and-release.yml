@@ -192,7 +192,11 @@ jobs:
               echo "Response headers:" >&2
               sed 's/^/  /' "$CURL_STATUS_FILE" >&2 || true
               echo "Response body:" >&2
-              sed 's/^/  /' "$CURL_BODY_FILE" >&2 || true
+              if jq -e . >/dev/null 2>&1 <"$CURL_BODY_FILE"; then
+                jq 'del(.publicKey)' "$CURL_BODY_FILE" | sed 's/^/  /' >&2
+              else
+                sed 's/^/  /' "$CURL_BODY_FILE" >&2 || true
+              fi
               exit 1
             fi
 
@@ -223,12 +227,20 @@ jobs:
 
             sleep 10
             status_response="$(chrome_api_request GET "$status_url")"
-            upload_state="$(jq -r '.uploadState // empty' <<<"$status_response")"
+            upload_state="$(jq -r '.lastAsyncUploadState // empty' <<<"$status_response")"
 
-            if [[ "$upload_state" == "FAILURE" || -z "$upload_state" ]]; then
+            if [[ "$upload_state" == "FAILURE" ]]; then
               echo "Chrome upload status check failed." >&2
-              echo "$status_response" >&2
+              jq 'del(.publicKey)' <<<"$status_response" >&2
               exit 1
+            fi
+
+            # lastAsyncUploadState is only present for recent async uploads.
+            # If it is missing, proceed to publish and let that endpoint return
+            # a more specific error if the item is not yet ready.
+            if [[ -z "$upload_state" ]]; then
+              upload_state="SUCCESS"
+              break
             fi
           done
 
