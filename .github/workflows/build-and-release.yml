@@ -323,14 +323,7 @@ jobs:
           metadata_payload="$(
             jq -cn \
               --arg summary "Browser extension that augments Service Fabric Explorer with direct operational actions, inline table controls, and modal-driven workflows for replicas, partitions, services, nodes, applications, and repair tasks." \
-              '{
-                categories: {
-                  firefox: ["developer-tools"]
-                },
-                summary: {
-                  "en-US": $summary
-                }
-              }'
+              '{categories:{firefox:["web-development"]},summary:{"en-US":$summary}}'
           )"
 
           curl --fail-with-body -sS \
