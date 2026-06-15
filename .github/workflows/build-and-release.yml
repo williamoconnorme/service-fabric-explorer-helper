@@ -265,6 +265,7 @@ jobs:
           addon-id: ${{ secrets.FIREFOX_ADDON_ID }}
           addon-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox.zip
           source-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox-source.zip
+          release-note: Service Fabric Explorer Helper ${{ needs.package.outputs.version }} release.
           approval-note: |
             This add-on is submitted for public listing on AMO.
             No build step is required. The extension source is plain JavaScript in the repository root.
