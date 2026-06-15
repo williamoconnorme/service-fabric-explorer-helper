@@ -63,6 +63,7 @@ jobs:
             sfx-ui.js
             README.md
             PRIVACY-POLICY.md
+            LICENSE
           )
 
           PACKAGE_ROOT="$(mktemp -d)"
@@ -265,6 +266,7 @@ jobs:
           addon-id: ${{ secrets.FIREFOX_ADDON_ID }}
           addon-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox.zip
           source-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox-source.zip
+          license: MIT
           release-note: Service Fabric Explorer Helper ${{ needs.package.outputs.version }} release.
           approval-note: |
             This add-on is submitted for public listing on AMO.
