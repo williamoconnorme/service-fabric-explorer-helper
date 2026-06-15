@@ -310,6 +310,36 @@ jobs:
 
           echo "Chrome Web Store publish result: $item_state"
 
+      - name: Ensure Firefox AMO metadata
+        env:
+          FIREFOX_ADDON_ID: ${{ secrets.FIREFOX_ADDON_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          FIREFOX_JWT_TOKEN="$(python3 -c 'import base64,hashlib,hmac,json,os,time,uuid; b64=lambda v: base64.urlsafe_b64encode(v).rstrip(b\"=\").decode(\"ascii\"); iat=int(time.time()); header={\"alg\":\"HS256\",\"typ\":\"JWT\"}; payload={\"iss\":os.environ[\"FIREFOX_JWT_ISSUER\"],\"jti\":str(uuid.uuid4()),\"iat\":iat,\"exp\":iat+60}; segments=[b64(json.dumps(header,separators=(\",\",\":\")).encode(\"utf-8\")), b64(json.dumps(payload,separators=(\",\",\":\")).encode(\"utf-8\"))]; signing_input=\".\".join(segments).encode(\"ascii\"); signature=hmac.new(os.environ[\"FIREFOX_JWT_SECRET\"].encode(\"utf-8\"), signing_input, hashlib.sha256).digest(); print(\".\".join([*segments, b64(signature)]))')"
+
+          metadata_payload="$(
+            jq -cn \
+              --arg summary "Browser extension that augments Service Fabric Explorer with direct operational actions, inline table controls, and modal-driven workflows for replicas, partitions, services, nodes, applications, and repair tasks." \
+              '{
+                categories: {
+                  firefox: ["developer-tools"]
+                },
+                summary: {
+                  "en-US": $summary
+                }
+              }'
+          )"
+
+          curl --fail-with-body -sS \
+            -X PATCH \
+            "https://addons.mozilla.org/api/v5/addons/addon/${FIREFOX_ADDON_ID}/" \
+            -H "Authorization: JWT ${FIREFOX_JWT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$metadata_payload"
+
       - name: Publish to Firefox Add-ons
         uses: browser-actions/release-firefox-addon@v0.2.1
         with:
