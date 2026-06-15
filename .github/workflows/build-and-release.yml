@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish_stores:
+        description: Publish the built packages to Chrome Web Store and Firefox Add-ons
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -13,6 +19,8 @@ jobs:
   package:
     name: Package Extensions
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -44,10 +52,37 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           mkdir -p dist
-          FILES="manifest.json content-script.js sfx-core.js sfx-modal.js sfx-api.js sfx-ui.js README.md PRIVACY-POLICY.md"
-          zip -r "dist/service-fabric-explorer-helper-${VERSION}-chrome.zip" $FILES
-          zip -r "dist/service-fabric-explorer-helper-v${VERSION}.xpi" $FILES
+          FILES=(
+            manifest.json
+            content-script.js
+            sfx-core.js
+            sfx-modal.js
+            sfx-api.js
+            sfx-ui.js
+            README.md
+            PRIVACY-POLICY.md
+          )
+
+          PACKAGE_ROOT="$(mktemp -d)"
+          cp "${FILES[@]}" "$PACKAGE_ROOT"/
+
+          (
+            cd "$PACKAGE_ROOT"
+            zip -r "$GITHUB_WORKSPACE/dist/service-fabric-explorer-helper-${VERSION}-chrome.zip" .
+            zip -r "$GITHUB_WORKSPACE/dist/service-fabric-explorer-helper-${VERSION}-firefox.zip" .
+          )
+
+      - name: Package Firefox source archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip -r "dist/service-fabric-explorer-helper-${VERSION}-firefox-source.zip" \
+            . \
+            -x ".git/*" \
+               "dist/*"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -55,7 +90,6 @@ jobs:
           name: browser-extension-packages
           path: |
             dist/*.zip
-            dist/*.xpi
 
       - name: Attach assets to GitHub release
         if: startsWith(github.ref, 'refs/tags/')
@@ -63,4 +97,148 @@ jobs:
         with:
           files: |
             dist/service-fabric-explorer-helper-${{ steps.version.outputs.version }}-chrome.zip
-            dist/service-fabric-explorer-helper-v${{ steps.version.outputs.version }}.xpi
+            dist/service-fabric-explorer-helper-${{ steps.version.outputs.version }}-firefox.zip
+            dist/service-fabric-explorer-helper-${{ steps.version.outputs.version }}-firefox-source.zip
+
+  publish-stores:
+    name: Publish to Browser Stores
+    runs-on: ubuntu-latest
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish_stores == true
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-extension-packages
+          path: dist
+
+      - name: Validate browser store secrets
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_KEY }}
+          FIREFOX_ADDON_ID: ${{ secrets.FIREFOX_ADDON_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for secret_name in \
+            CHROME_EXTENSION_ID \
+            CHROME_PUBLISHER_ID \
+            CHROME_SERVICE_ACCOUNT_EMAIL \
+            CHROME_SERVICE_ACCOUNT_KEY \
+            FIREFOX_ADDON_ID \
+            FIREFOX_JWT_ISSUER \
+            FIREFOX_JWT_SECRET; do
+            if [[ -z "${!secret_name}" ]]; then
+              missing+=("$secret_name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required GitHub Actions secrets:\n' >&2
+            printf '  - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
+      - id: chrome-auth
+        name: Authenticate Chrome publisher service account
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.CHROME_SERVICE_ACCOUNT_KEY }}
+          service_account: ${{ secrets.CHROME_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Publish to Chrome Web Store
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_ACCESS_TOKEN: ${{ steps.chrome-auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_PATH="dist/service-fabric-explorer-helper-${VERSION}-chrome.zip"
+
+          if [[ -z "$CHROME_ACCESS_TOKEN" ]]; then
+            echo "Chrome service account authentication did not produce an access token." >&2
+            exit 1
+          fi
+
+          upload_url="https://chromewebstore.googleapis.com/upload/v2/publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}:upload"
+          status_url="https://chromewebstore.googleapis.com/v2/publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}:fetchStatus"
+          publish_url="https://chromewebstore.googleapis.com/v2/publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}:publish"
+
+          upload_response="$(
+            curl --fail-with-body -sS \
+              -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
+              -X POST \
+              -T "$PACKAGE_PATH" \
+              "$upload_url"
+          )"
+          upload_state="$(jq -r '.uploadState // empty' <<<"$upload_response")"
+          if [[ "$upload_state" == "FAILURE" || -z "$upload_state" ]]; then
+            echo "Chrome upload failed." >&2
+            echo "$upload_response" >&2
+            exit 1
+          fi
+
+          for attempt in {1..12}; do
+            if [[ "$upload_state" == "SUCCESS" ]]; then
+              break
+            fi
+
+            sleep 10
+            status_response="$(
+              curl --fail-with-body -sS \
+                -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
+                "$status_url"
+            )"
+            upload_state="$(jq -r '.uploadState // empty' <<<"$status_response")"
+
+            if [[ "$upload_state" == "FAILURE" || -z "$upload_state" ]]; then
+              echo "Chrome upload status check failed." >&2
+              echo "$status_response" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$upload_state" != "SUCCESS" ]]; then
+            echo "Chrome upload did not reach SUCCESS within the polling window." >&2
+            exit 1
+          fi
+
+          publish_response="$(
+            curl --fail-with-body -sS \
+              -H "Authorization: Bearer ${CHROME_ACCESS_TOKEN}" \
+              -X POST \
+              "$publish_url"
+          )"
+          item_state="$(jq -r '.itemState // empty' <<<"$publish_response")"
+          if [[ -z "$item_state" ]]; then
+            echo "Chrome publish response did not include an item state." >&2
+            echo "$publish_response" >&2
+            exit 1
+          fi
+
+          echo "Chrome Web Store publish result: $item_state"
+
+      - name: Publish to Firefox Add-ons
+        uses: browser-actions/release-firefox-addon@v0.0.11
+        with:
+          addon-id: ${{ secrets.FIREFOX_ADDON_ID }}
+          addon-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox.zip
+          source-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox-source.zip
+          approval-note: |
+            This add-on is submitted for public listing on AMO.
+            No build step is required. The extension source is plain JavaScript in the repository root.
+            The Firefox package is built directly from manifest.json, content-script.js, sfx-core.js,
+            sfx-modal.js, sfx-api.js, sfx-ui.js, README.md, and PRIVACY-POLICY.md.
+          channel: listed
+          auth-api-issuer: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          auth-api-secret: ${{ secrets.FIREFOX_JWT_SECRET }}

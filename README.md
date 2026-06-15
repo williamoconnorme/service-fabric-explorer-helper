@@ -101,7 +101,8 @@ When a replica table is detected (headers contain both "Replica" and "Id"), a **
 ### Firefox upload package (recommended)
 
 - Use the GitHub Actions build artifacts/releases produced by `.github/workflows/build-and-release.yml`.
-- The workflow generates `service-fabric-explorer-helper-v<version>.xpi` with the required root layout and scripts.
+- The workflow generates `service-fabric-explorer-helper-<version>-firefox.zip` for AMO submission and `service-fabric-explorer-helper-<version>-firefox-source.zip` for reviewer source inspection.
+- Once the add-on is listed publicly on AMO, Firefox installs from AMO update automatically when a new listed version is published there.
 
 ## Privacy Policy
 
