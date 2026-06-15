@@ -229,7 +229,7 @@ jobs:
           echo "Chrome Web Store publish result: $item_state"
 
       - name: Publish to Firefox Add-ons
-        uses: browser-actions/release-firefox-addon@v0.0.11
+        uses: browser-actions/release-firefox-addon@v0.2.1
         with:
           addon-id: ${{ secrets.FIREFOX_ADDON_ID }}
           addon-path: dist/service-fabric-explorer-helper-${{ needs.package.outputs.version }}-firefox.zip
