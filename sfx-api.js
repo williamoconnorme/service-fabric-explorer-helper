@@ -1352,8 +1352,25 @@
   function extractRepairTaskStateFromRow(row) {
     if (!row) return "";
     const cells = row.querySelectorAll("td");
-    if (!cells || cells.length < 5) return "";
-    return (cells[4].textContent || "").trim();
+    if (!cells || !cells.length) return "";
+
+    const table = row.closest("table");
+    const headers = table ? Array.from(table.querySelectorAll("th")) : [];
+    const stateIndex = headers.findIndex((header) => {
+      const text = (header.textContent || "").trim().toLowerCase();
+      return text === "state" || text === "repair state" || text.includes("state");
+    });
+    if (stateIndex >= 0 && cells[stateIndex]) {
+      return (cells[stateIndex].textContent || "").trim();
+    }
+
+    const knownStates = /^(created|claimed|preparing|approved|executing|restoring|completed)$/i;
+    for (const cell of cells) {
+      const text = (cell.textContent || "").trim();
+      if (knownStates.test(text)) return text;
+    }
+
+    return "";
   }
 
   function parseRawRepairJobFromExpandedRow(row) {

@@ -181,7 +181,7 @@
         if (!taskId) return;
 
         const stateText = helper.extractRepairTaskStateFromRow(row);
-        const isCompleted = /^completed$/i.test(stateText);
+        const isCompleted = /\bcompleted\b/i.test(stateText);
         row.dataset.sfxRepairTaskRowAugmented = "1";
 
         const btnCell = document.createElement("td");
@@ -189,7 +189,7 @@
         forceApproveBtn.className = "simple-button";
         forceApproveBtn.textContent = "Force Approve";
         forceApproveBtn.title = `Force approve repair task ${taskId}`;
-        if (/^(approved|executing|restoring|completed)$/i.test(stateText)) {
+        if (/\b(approved|executing|restoring|completed)\b/i.test(stateText)) {
           forceApproveBtn.disabled = true;
           forceApproveBtn.title = `Force approve is not applicable in state ${stateText || "unknown"}`;
         }
@@ -227,7 +227,7 @@
           const currentTaskId = String(raw.TaskId || taskId || "").trim();
           const currentVersion = String(raw.Version || "0").trim() || "0";
           const currentState = String(raw.State || stateText || "").trim();
-          const requestAbort = /^(executing|restoring)$/i.test(currentState);
+          const requestAbort = /\b(executing|restoring)\b/i.test(currentState);
           if (!currentTaskId) {
             helper.setStatus("Could not determine repair task id for cancel.", "error");
             return;
@@ -249,8 +249,7 @@
         deleteBtn.textContent = "Delete Repair";
         deleteBtn.title = `Delete repair task ${taskId}`;
         if (!isCompleted) {
-          deleteBtn.disabled = true;
-          deleteBtn.title = "Delete is supported for completed repair tasks only";
+          deleteBtn.title = "Delete requires state Completed; if this row is completed, click to validate against the latest row data";
         }
         deleteBtn.addEventListener("click", async (ev) => {
           ev.stopPropagation();
@@ -258,7 +257,7 @@
           const currentTaskId = String(raw.TaskId || taskId || "").trim();
           const currentVersion = String(raw.Version || "0").trim() || "0";
           const currentState = String(raw.State || stateText || "").trim();
-          if (!/^completed$/i.test(currentState)) {
+          if (currentState && !/\bcompleted\b/i.test(currentState)) {
             helper.setStatus(`DeleteRepairTask requires state Completed (current: ${currentState || "unknown"}).`, "warning");
             return;
           }
@@ -268,7 +267,7 @@
           }
           const confirmed = await helper.confirmWithActionModal(
             "Confirm Delete Repair Task",
-            `TaskId: ${currentTaskId}\nVersion: ${currentVersion}\nState: ${currentState}\napi-version: 6.0`,
+            `TaskId: ${currentTaskId}\nVersion: ${currentVersion}\nState: ${currentState || "(unknown)"}\napi-version: 6.0`,
             "Delete Repair"
           );
           if (!confirmed) return;
