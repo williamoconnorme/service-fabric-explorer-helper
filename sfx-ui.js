@@ -599,6 +599,11 @@
 
     const host = document.createElement("div");
     host.className = "right-action sfx-tree-action-host";
+    ["pointerdown", "mousedown", "click"].forEach((eventName) => {
+      host.addEventListener(eventName, (ev) => {
+        ev.stopPropagation();
+      });
+    });
 
     const actionCollection = document.createElement("app-action-collection-drop-down");
     actionCollection.tabIndex = -1;
