@@ -61,6 +61,32 @@
     helper.setStatus(`Rollback requested for ${appId}.`, "success");
   }
 
+  async function rollbackClusterUpgrade(options = {}) {
+    const { apiVersion, timeout } = options;
+    const base = `${window.location.protocol}//${window.location.host}`;
+    const path = "/$/RollbackUpgrade";
+    const url = new URL(path, base);
+    url.searchParams.set("api-version", apiVersion || "6.0");
+    if (timeout) {
+      url.searchParams.set("timeout", String(timeout));
+    }
+    const bearer = helper.findBearerToken();
+    helper.setStatus("Rolling back cluster upgrade...");
+    const resp = await fetch(url.toString(), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {})
+      }
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new Error(`Cluster rollback failed (${resp.status}): ${body || resp.statusText}`);
+    }
+    helper.setStatus("Cluster rollback requested.", "success");
+  }
+
   async function postSfAction(path, options = {}) {
     const base = `${window.location.protocol}//${window.location.host}`;
     const url = new URL(path, base);
@@ -1474,6 +1500,7 @@
   Object.assign(helper, {
     deleteReplica,
     rollbackApplication,
+    rollbackClusterUpgrade,
     postSfAction,
     getSfJson,
     getServiceDescription,

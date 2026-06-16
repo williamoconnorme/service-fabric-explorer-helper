@@ -70,9 +70,14 @@
     if (menuTexts.some((text) => text.includes("restart replica"))) return "replica";
     if (menuTexts.some((text) => text.includes("delete application"))) return "application";
     if (menuTexts.some((text) => text.includes("delete service"))) return "service";
+    if (menuTexts.some((text) => text.includes("rollback cluster upgrade"))) return "cluster";
 
     const row = menu.closest(".self.hover-row");
     if (row) {
+      const clusterLink = row.querySelector('a[href*="/cluster"], a[href*="#/cluster"]');
+      if (clusterLink) return "cluster";
+      const rowText = (row.textContent || "").trim().toLowerCase();
+      if (rowText === "cluster" || rowText.startsWith("cluster")) return "cluster";
       const titleEls = Array.from(row.querySelectorAll("[title]"));
       const hasPartitionTitle = titleEls.some((el) =>
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((el.getAttribute("title") || "").trim())
@@ -575,7 +580,7 @@
     toggle.style.backgroundPosition = styles.backgroundPosition;
   }
 
-  function createInjectedTreeDropdown() {
+  function createInjectedTreeDropdown(entityType = "partition") {
     helper.ensureActionModalStyles();
 
     const host = document.createElement("div");
@@ -604,7 +609,7 @@
     menu.className = "dropdown-menu";
     menu.setAttribute("ngbdropdownmenu", "");
     menu.setAttribute("data-popper-placement", "left");
-    menu.dataset.sfxMenuEntity = "partition";
+    menu.dataset.sfxMenuEntity = entityType;
     toggle._sfxMenu = menu;
     menu._sfxToggle = toggle;
     menu.addEventListener("click", (ev) => {
@@ -645,14 +650,22 @@
     });
   }
 
-  function attachPartitionTreeActionToggles() {
-    const rows = findPartitionTreeRows();
+  function findClusterTreeRows() {
+    return Array.from(document.querySelectorAll(".self.hover-row")).filter((row) => {
+      const link = row.querySelector('a[href*="/cluster"], a[href*="#/cluster"]');
+      if (link) return true;
+      const text = (row.textContent || "").trim().toLowerCase();
+      return text === "cluster" || text.startsWith("cluster");
+    });
+  }
+
+  function attachTreeActionToggles(rows, entityType) {
     rows.forEach((row) => {
       if (row.querySelector(".sfx-tree-action-host")) return;
       const existingRightAction = row.querySelector(".right-action");
       if (existingRightAction && existingRightAction.querySelector(".dropdown-menu")) return;
 
-      const { host } = createInjectedTreeDropdown();
+      const { host } = createInjectedTreeDropdown(entityType);
       if (existingRightAction) {
         host.className = "sfx-tree-action-host";
         while (host.firstChild) {
@@ -663,6 +676,11 @@
       }
       row.appendChild(host);
     });
+  }
+
+  function attachPartitionTreeActionToggles() {
+    attachTreeActionToggles(findPartitionTreeRows(), "partition");
+    attachTreeActionToggles(findClusterTreeRows(), "cluster");
   }
 
   function attachActionDropdowns() {
@@ -744,6 +762,24 @@
           helper.rollbackApplication(normalized, { ...helper.state }).catch((err) => helper.setStatus(err.message, "error"));
         });
         menu.appendChild(rollbackBtn);
+      }
+
+      if (menuEntityType === "cluster" && !menu.dataset.sfxClusterMenuAugmented) {
+        menu.dataset.sfxClusterMenuAugmented = "1";
+        const rollbackClusterBtn = document.createElement("button");
+        rollbackClusterBtn.textContent = "Rollback Cluster Upgrade";
+        rollbackClusterBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        rollbackClusterBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const confirmed = await helper.confirmWithActionModal(
+            "Confirm Rollback Cluster Upgrade",
+            "Action: RollbackClusterUpgrade\napi-version: 6.0",
+            "Rollback Cluster Upgrade"
+          );
+          if (!confirmed) return;
+          helper.rollbackClusterUpgrade({ apiVersion: "6.0" }).catch((err) => helper.setStatus(err.message, "error"));
+        });
+        menu.appendChild(rollbackClusterBtn);
       }
 
       const serviceContext = helper.collectRouteServiceContext(menu);
