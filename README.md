@@ -93,8 +93,8 @@ When a replica table is detected (headers contain both "Replica" and "Id"), a **
 ## Packaging for teammates
 
 - No build step is needed, but your archive must include all files referenced by `manifest.json`.
-- Required files: `manifest.json`, `content-script.js`, `sfx-core.js`, `sfx-modal.js`, `sfx-api.js`, `sfx-ui.js`.
-- Optional files: `README.md`, `PRIVACY-POLICY.md`, icons.
+- Required files: `manifest.json`, `content-script.js`, `sfx-core.js`, `sfx-modal.js`, `sfx-api.js`, `sfx-ui.js`, `icons/service-fabric-128.png`.
+- Optional files: `README.md`, `PRIVACY-POLICY.md`.
 - Firefox users can load the unpacked folder via `about:debugging`, Chromium users via `chrome://extensions` → **Load unpacked**.
 - If you want a signed/packed extension, follow your org’s signing process or the Chrome Web Store/AMO flow; this repo is already MV3-compatible for Chromium.
 

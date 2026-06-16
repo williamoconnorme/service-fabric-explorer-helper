@@ -68,6 +68,8 @@ jobs:
 
           PACKAGE_ROOT="$(mktemp -d)"
           cp "${FILES[@]}" "$PACKAGE_ROOT"/
+          mkdir -p "$PACKAGE_ROOT/icons"
+          cp -R icons/. "$PACKAGE_ROOT/icons"/
 
           (
             cd "$PACKAGE_ROOT"
