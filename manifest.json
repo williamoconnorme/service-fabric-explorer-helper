@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Service Fabric Explorer Helper",
-  "description": "Adds replica delete helpers to Service Fabric Explorer pages.",
-  "version": "0.2.1",
+  "description": "A browser extension that enhances the Service Fabric Explorer by providing additional features and functionality.",
+  "version": "1.0.0",
+  "icons": {
+    "128": "icons/service-fabric-128.png"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -18,10 +21,6 @@
       ],
       "run_at": "document_idle"
     }
-  ],
-  "host_permissions": [
-    "*://*/Explorer*",
-    "*://*/explorer*"
   ],
   "permissions": [],
   "browser_specific_settings": {
