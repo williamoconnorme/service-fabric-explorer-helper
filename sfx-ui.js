@@ -562,12 +562,23 @@
     });
   }
 
-  function applyNativeTreeToggleSizing(toggle) {
+  function applyNativeTreeToggleSizing(toggle, sourceToggle = null) {
     if (!toggle) return;
-    const nativeToggle = Array.from(document.querySelectorAll(".dropdown-toggle.simple-button.tree-view")).find(
-      (el) => !el.closest(".sfx-tree-action-host")
-    );
-    if (!nativeToggle) return;
+    const nativeToggle =
+      sourceToggle ||
+      Array.from(
+        document.querySelectorAll(
+          ".right-action .dropdown-toggle, .right-action button, .dropdown-toggle.simple-button.tree-view, button.simple-button.tree-view"
+        )
+      ).find((el) => !el.closest(".sfx-tree-action-host"));
+    if (!nativeToggle) {
+      toggle.style.minWidth = "28px";
+      toggle.style.minHeight = "28px";
+      toggle.style.width = "28px";
+      toggle.style.height = "28px";
+      toggle.style.padding = "0";
+      return;
+    }
     const styles = window.getComputedStyle(nativeToggle);
     toggle.style.width = styles.width;
     toggle.style.height = styles.height;
@@ -576,11 +587,14 @@
     toggle.style.padding = styles.padding;
     toggle.style.margin = styles.margin;
     toggle.style.fontSize = styles.fontSize;
+    toggle.style.lineHeight = styles.lineHeight;
+    toggle.style.borderRadius = styles.borderRadius;
     toggle.style.backgroundSize = styles.backgroundSize;
     toggle.style.backgroundPosition = styles.backgroundPosition;
+    toggle.style.backgroundRepeat = styles.backgroundRepeat;
   }
 
-  function createInjectedTreeDropdown(entityType = "partition") {
+  function createInjectedTreeDropdown(entityType = "partition", sourceToggle = null) {
     helper.ensureActionModalStyles();
 
     const host = document.createElement("div");
@@ -603,7 +617,7 @@
     toggle.className = "dropdown-toggle simple-button tree-view";
     toggle.setAttribute("aria-haspopup", "false");
     toggle.setAttribute("aria-expanded", "false");
-    applyNativeTreeToggleSizing(toggle);
+    applyNativeTreeToggleSizing(toggle, sourceToggle);
 
     const menu = document.createElement("div");
     menu.className = "dropdown-menu";
@@ -665,15 +679,19 @@
       const existingRightAction = row.querySelector(".right-action");
       if (existingRightAction && existingRightAction.querySelector(".dropdown-menu")) return;
 
-      const { host } = createInjectedTreeDropdown(entityType);
+      const sourceToggle = existingRightAction
+        ? existingRightAction.querySelector(".dropdown-toggle, button, a")
+        : row.querySelector(".right-action .dropdown-toggle, .right-action button, .right-action a");
+      const { host } = createInjectedTreeDropdown(entityType, sourceToggle);
       if (existingRightAction) {
-        host.className = "sfx-tree-action-host";
+        host.className = "right-action sfx-tree-action-host";
         while (host.firstChild) {
           existingRightAction.appendChild(host.firstChild);
         }
-        existingRightAction.classList.add("sfx-tree-action-host");
+        existingRightAction.classList.add("right-action", "sfx-tree-action-host");
         return;
       }
+      row.classList.add("sfx-tree-action-row");
       row.appendChild(host);
     });
   }
@@ -780,6 +798,115 @@
           helper.rollbackClusterUpgrade({ apiVersion: "6.0" }).catch((err) => helper.setStatus(err.message, "error"));
         });
         menu.appendChild(rollbackClusterBtn);
+
+        const getChaosBtn = document.createElement("button");
+        getChaosBtn.textContent = "Get Chaos";
+        getChaosBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        getChaosBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          try {
+            const chaos = await helper.getChaos({ apiVersion: "6.2" });
+            await helper.showMessageModal("Chaos Status", JSON.stringify(chaos, null, 2));
+          } catch (err) {
+            helper.setStatus(err.message, "error");
+          }
+        });
+        menu.appendChild(getChaosBtn);
+
+        const startChaosBtn = document.createElement("button");
+        startChaosBtn.textContent = "Start Chaos";
+        startChaosBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        startChaosBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          try {
+            const input = await helper.promptStartChaosInput();
+            if (!input) return;
+            const confirmed = await helper.confirmWithActionModal(
+              "Confirm Start Chaos",
+              `api-version: 6.0\nChaosParameters:\n${JSON.stringify(input.chaosParameters, null, 2)}`,
+              "Start Chaos"
+            );
+            if (!confirmed) return;
+            await helper.startChaos(input.chaosParameters, { apiVersion: "6.0", timeout: input.timeout });
+          } catch (err) {
+            helper.setStatus(err.message, "error");
+          }
+        });
+        menu.appendChild(startChaosBtn);
+
+        const stopChaosBtn = document.createElement("button");
+        stopChaosBtn.textContent = "Stop Chaos";
+        stopChaosBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        stopChaosBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const confirmed = await helper.confirmWithActionModal(
+            "Confirm Stop Chaos",
+            "Action: StopChaos\napi-version: 6.0",
+            "Stop Chaos"
+          );
+          if (!confirmed) return;
+          helper.stopChaos({ apiVersion: "6.0" }).catch((err) => helper.setStatus(err.message, "error"));
+        });
+        menu.appendChild(stopChaosBtn);
+
+        const getChaosEventsBtn = document.createElement("button");
+        getChaosEventsBtn.textContent = "Get Chaos Events";
+        getChaosEventsBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        getChaosEventsBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          try {
+            const input = await helper.promptChaosEventsInput();
+            if (!input) return;
+            const result = await helper.getChaosEvents({
+              apiVersion: "6.2",
+              continuationToken: input.continuationToken,
+              startTimeUtc: input.startTimeUtc,
+              endTimeUtc: input.endTimeUtc,
+              maxResults: input.maxResults,
+              timeout: input.timeout
+            });
+            await helper.showMessageModal("Chaos Events", JSON.stringify(result, null, 2));
+          } catch (err) {
+            helper.setStatus(err.message, "error");
+          }
+        });
+        menu.appendChild(getChaosEventsBtn);
+
+        const getChaosScheduleBtn = document.createElement("button");
+        getChaosScheduleBtn.textContent = "Get Chaos Schedule";
+        getChaosScheduleBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        getChaosScheduleBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          try {
+            const schedule = await helper.getChaosSchedule({ apiVersion: "6.2" });
+            await helper.showMessageModal("Chaos Schedule", JSON.stringify(schedule, null, 2));
+          } catch (err) {
+            helper.setStatus(err.message, "error");
+          }
+        });
+        menu.appendChild(getChaosScheduleBtn);
+
+        const setChaosScheduleBtn = document.createElement("button");
+        setChaosScheduleBtn.textContent = "Set Chaos Schedule";
+        setChaosScheduleBtn.className = (styleSourceBtn && styleSourceBtn.className) || "dropdown-item";
+        setChaosScheduleBtn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          try {
+            const currentSchedule = await helper.getChaosSchedule({ apiVersion: "6.2" });
+            const input = await helper.promptChaosScheduleInput(currentSchedule);
+            if (!input) return;
+            const confirmed = await helper.confirmWithActionModal(
+              "Confirm Set Chaos Schedule",
+              `api-version: 6.2\nChaosScheduleDescription:\n${JSON.stringify(input.schedule, null, 2)}`,
+              "Set Chaos Schedule"
+            );
+            if (!confirmed) return;
+            await helper.postChaosSchedule(input.schedule, { apiVersion: "6.2", timeout: input.timeout });
+          } catch (err) {
+            helper.setStatus(err.message, "error");
+          }
+        });
+        menu.appendChild(setChaosScheduleBtn);
       }
 
       const serviceContext = helper.collectRouteServiceContext(menu);

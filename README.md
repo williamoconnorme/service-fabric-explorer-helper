@@ -23,6 +23,12 @@ Browser extension for Firefox and Chromium-based browsers that augments Service 
 #### Cluster
 
 - **Rollback Cluster Upgrade**
+- **Get Chaos**
+- **Start Chaos**
+- **Stop Chaos**
+- **Get Chaos Events**
+- **Get Chaos Schedule**
+- **Set Chaos Schedule**
 
 #### Service
 
@@ -72,7 +78,7 @@ Browser extension for Firefox and Chromium-based browsers that augments Service 
 4. On application upgrade contexts, the Actions dropdown gains **Rollback Application** (uses `POST /Applications/{appId}/$/RollbackUpgrade?api-version=6.0`).
 5. On service contexts, the Actions dropdown gains **Scale Service** and **Update Service**. Scale opens a stateful/stateless-specific modal and submits to `POST /Services/{serviceId}/$/Update?api-version=6.0`; Update opens a structured stateful/stateless form prepopulated with currently set values, only sends fields that remain set in the form, computes the required `Flags`, and submits to the same endpoint.
 6. On node contexts, the Actions dropdown gains **Create Repair Task** (uses `POST /$/CreateRepairTask?api-version=6.0`).
-7. On cluster contexts, the Actions dropdown gains **Rollback Cluster Upgrade** (uses `POST /$/RollbackUpgrade?api-version=6.0`).
+7. On cluster contexts, the Actions dropdown gains **Rollback Cluster Upgrade** (uses `POST /$/RollbackUpgrade?api-version=6.0`) plus Chaos client actions: **Get Chaos**, **Start Chaos**, **Stop Chaos**, **Get Chaos Events**, **Get Chaos Schedule**, and **Set Chaos Schedule**.
 8. Confirmation dialogs show replica/partition/node/service (or application/repair-task details) before executing.
 9. Repair task creation opens an SFX-styled modal with input fields for `TaskId`, `Action`, and target nodes, then posts a Node-targeted payload with state `Created`.
 10. On `#/repairtasks`, each repair job row gets **Force Approve**, **Cancel Repair**, **Delete Repair**, **Update State**, and **Health Policy** buttons.
@@ -83,7 +89,8 @@ Browser extension for Firefox and Chromium-based browsers that augments Service 
 15. The extension infers ids from the selected UI node and adds **Recover Partition**, **Reset Partition Load**, **Move Primary Replica**, **Move Secondary Replica**, **Move Instance**, **Backup Partition**, **Restore Partition**, **Recover Service Partitions**, **Recover System Partitions**, **Recover All Partitions**, **Start Data Loss**, **Start Partition Restart**, and progress lookups for restart/backup/restore when the required context is available.
 16. **Start Data Loss** always uses `DataLossMode=FullDataLoss` and auto-generates an `OperationId`.
 17. **Move Primary Replica**, **Move Secondary Replica**, **Move Instance**, **Backup Partition**, **Restore Partition**, and **Start Partition Restart** open input modals and call the corresponding Service Fabric REST APIs.
-18. On selected partition and cluster rows in the explorer tree, the extension injects a tree-view Actions toggle so those commands are available directly from the explorer node.
+18. Chaos read actions show the raw JSON response in a modal. **Start Chaos** and **Set Chaos Schedule** accept JSON payloads directly so the full Service Fabric REST surface remains available.
+19. On selected partition and cluster rows in the explorer tree, the extension injects a tree-view Actions toggle so those commands are available directly from the explorer node.
 
 ### Inline buttons
 

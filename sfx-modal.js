@@ -68,6 +68,16 @@
         margin-left: auto;
         line-height: 1;
       }
+      .self.hover-row.sfx-tree-action-row {
+        position: relative;
+      }
+      .self.hover-row.sfx-tree-action-row > .sfx-tree-action-host {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 2;
+      }
       .sfx-tree-action-host app-action-collection-drop-down {
         display: flex;
         align-items: center;
@@ -75,8 +85,11 @@
       }
       .self.hover-row:hover .sfx-tree-action-host,
       .self.hover-row .sfx-tree-action-host:focus-within,
-      .self.hover-row .sfx-tree-action-host.sfx-open {
-        display: flex;
+      .self.hover-row .sfx-tree-action-host.sfx-open,
+      .self.hover-row:hover .sfx-tree-action-host.hidden,
+      .self.hover-row .sfx-tree-action-host.hidden:focus-within,
+      .self.hover-row .sfx-tree-action-host.hidden.sfx-open {
+        display: flex !important;
       }
       .sfx-tree-action-host .dropdown-toggle.simple-button.tree-view {
         display: inline-block;

@@ -87,6 +87,173 @@
     helper.setStatus("Cluster rollback requested.", "success");
   }
 
+  async function getChaos(options = {}) {
+    return getSfJson("/Tools/Chaos", {
+      apiVersion: options.apiVersion || "6.2",
+      query: { timeout: options.timeout }
+    });
+  }
+
+  async function startChaos(chaosParameters, options = {}) {
+    if (!chaosParameters || typeof chaosParameters !== "object") {
+      throw new Error("ChaosParameters body is required for Start Chaos.");
+    }
+    helper.setStatus("Starting Chaos...");
+    await postSfAction("/Tools/Chaos/$/Start", {
+      apiVersion: options.apiVersion || "6.0",
+      query: { timeout: options.timeout },
+      body: chaosParameters
+    });
+    helper.setStatus("Start Chaos requested.", "success");
+  }
+
+  async function stopChaos(options = {}) {
+    helper.setStatus("Stopping Chaos...");
+    await postSfAction("/Tools/Chaos/$/Stop", {
+      apiVersion: options.apiVersion || "6.0",
+      query: { timeout: options.timeout }
+    });
+    helper.setStatus("Stop Chaos requested.", "success");
+  }
+
+  async function getChaosEvents(options = {}) {
+    const hasContinuationToken = !!String(options.continuationToken || "").trim();
+    const hasTimeRange = !!String(options.startTimeUtc || "").trim() || !!String(options.endTimeUtc || "").trim();
+    if (hasContinuationToken && hasTimeRange) {
+      throw new Error("Get Chaos Events cannot use ContinuationToken and StartTimeUtc/EndTimeUtc in the same request.");
+    }
+    return getSfJson("/Tools/Chaos/Events", {
+      apiVersion: options.apiVersion || "6.2",
+      query: {
+        ContinuationToken: hasContinuationToken ? String(options.continuationToken).trim() : undefined,
+        StartTimeUtc: String(options.startTimeUtc || "").trim() || undefined,
+        EndTimeUtc: String(options.endTimeUtc || "").trim() || undefined,
+        MaxResults: options.maxResults,
+        timeout: options.timeout
+      }
+    });
+  }
+
+  async function getChaosSchedule(options = {}) {
+    return getSfJson("/Tools/Chaos/Schedule", {
+      apiVersion: options.apiVersion || "6.2",
+      query: { timeout: options.timeout }
+    });
+  }
+
+  async function postChaosSchedule(scheduleDescription, options = {}) {
+    if (!scheduleDescription || typeof scheduleDescription !== "object") {
+      throw new Error("Chaos Schedule body is required for Set Chaos Schedule.");
+    }
+    helper.setStatus("Posting Chaos schedule...");
+    await postSfAction("/Tools/Chaos/Schedule", {
+      apiVersion: options.apiVersion || "6.2",
+      query: { timeout: options.timeout },
+      body: scheduleDescription
+    });
+    helper.setStatus("Chaos schedule update requested.", "success");
+  }
+
+  function parseRequiredJson(rawValue, label) {
+    const trimmed = String(rawValue || "").trim();
+    if (!trimmed) {
+      throw new Error(`${label} is required.`);
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch (err) {
+      throw new Error(`${label} must be valid JSON: ${err.message}`);
+    }
+  }
+
+  async function promptStartChaosInput() {
+    const sample = {
+      TimeToRunInSeconds: 60,
+      MaxClusterStabilizationTimeoutInSeconds: 60,
+      MaxConcurrentFaults: 1,
+      EnableMoveReplicaFaults: true
+    };
+    const values = await helper.openActionModal({
+      title: "Start Chaos",
+      submitLabel: "Start Chaos",
+      cancelLabel: "Cancel",
+      message: "Provide a ChaosParameters JSON body.",
+      fields: [
+        {
+          name: "chaosParameters",
+          label: "ChaosParameters JSON",
+          type: "textarea",
+          rows: 12,
+          value: JSON.stringify(sample, null, 2),
+          required: true
+        },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    return {
+      chaosParameters: parseRequiredJson(values.chaosParameters, "ChaosParameters"),
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptChaosEventsInput() {
+    const values = await helper.openActionModal({
+      title: "Get Chaos Events",
+      submitLabel: "Get Chaos Events",
+      cancelLabel: "Cancel",
+      message: "Use either ContinuationToken or StartTimeUtc/EndTimeUtc. StartTimeUtc and EndTimeUtc are Windows file times.",
+      fields: [
+        { name: "continuationToken", label: "ContinuationToken (optional)", value: "", required: false },
+        { name: "startTimeUtc", label: "StartTimeUtc (optional)", value: "", required: false },
+        { name: "endTimeUtc", label: "EndTimeUtc (optional)", value: "", required: false },
+        { name: "maxResults", label: "MaxResults (optional)", type: "number", value: "", required: false },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+
+    const continuationToken = String(values.continuationToken || "").trim();
+    const startTimeUtc = String(values.startTimeUtc || "").trim();
+    const endTimeUtc = String(values.endTimeUtc || "").trim();
+    if (continuationToken && (startTimeUtc || endTimeUtc)) {
+      throw new Error("Use either ContinuationToken or StartTimeUtc/EndTimeUtc, not both.");
+    }
+
+    return {
+      continuationToken,
+      startTimeUtc,
+      endTimeUtc,
+      maxResults: helper.parseOptionalInt(values.maxResults),
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
+  async function promptChaosScheduleInput(currentSchedule) {
+    const values = await helper.openActionModal({
+      title: "Set Chaos Schedule",
+      submitLabel: "Set Chaos Schedule",
+      cancelLabel: "Cancel",
+      message: "Provide a ChaosScheduleDescription JSON body. The version must match the server's current version.",
+      fields: [
+        {
+          name: "schedule",
+          label: "ChaosScheduleDescription JSON",
+          type: "textarea",
+          rows: 14,
+          value: JSON.stringify(currentSchedule || {}, null, 2),
+          required: true
+        },
+        { name: "timeout", label: "timeout (seconds, optional)", type: "number", value: "", required: false }
+      ]
+    });
+    if (!values) return null;
+    return {
+      schedule: parseRequiredJson(values.schedule, "ChaosScheduleDescription"),
+      timeout: helper.parseOptionalInt(values.timeout)
+    };
+  }
+
   async function postSfAction(path, options = {}) {
     const base = `${window.location.protocol}//${window.location.host}`;
     const url = new URL(path, base);
@@ -1501,6 +1668,12 @@
     deleteReplica,
     rollbackApplication,
     rollbackClusterUpgrade,
+    getChaos,
+    startChaos,
+    stopChaos,
+    getChaosEvents,
+    getChaosSchedule,
+    postChaosSchedule,
     postSfAction,
     getSfJson,
     getServiceDescription,
@@ -1522,6 +1695,9 @@
     buildDefaultRepairTaskId,
     normalizeNodeList,
     promptRepairTaskInput,
+    promptStartChaosInput,
+    promptChaosEventsInput,
+    promptChaosScheduleInput,
     confirmStartDataLoss,
     createRepairTask,
     forceApproveRepairTask,
