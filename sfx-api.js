@@ -1155,6 +1155,16 @@
     return `manual-repair-${stamp}`;
   }
 
+  const REPAIR_ACTION_OPTIONS = [
+    "System.Reboot",
+    "System.FullReimage",
+    "System.ReimageOS",
+    "System.Azure.Reboot",
+    "System.Azure.HostReboot",
+    "System.Azure.ReimageOS",
+    "System.Azure.Restart"
+  ];
+
   function normalizeNodeList(raw) {
     if (!raw) return [];
     return raw
@@ -1170,7 +1180,14 @@
       cancelLabel: "Cancel",
       fields: [
         { name: "taskId", label: "Repair Task ID", value: buildDefaultRepairTaskId(), required: true },
-        { name: "action", label: "Repair Action", value: "System.Reboot", required: true },
+        {
+          name: "action",
+          label: "Repair Action",
+          type: "select",
+          value: "System.Reboot",
+          required: true,
+          options: REPAIR_ACTION_OPTIONS.map((value) => ({ value, label: value }))
+        },
         { name: "nodeNames", label: "Target Node Name(s), comma-separated", value: defaultNodeName || "", required: true },
         { name: "description", label: "Description (optional)", value: "", required: false }
       ]
